@@ -1,0 +1,8 @@
+.admin-table-card {
+  margin-bottom: 3rem;
+}
+
+.admin-actions {
+  display: flex;
+  gap: 0.5rem;
+}
