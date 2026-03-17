@@ -89,8 +89,8 @@ def signup(user: UserCreate):
     hashed_password = get_password_hash(user.password)
     # Default 100 credits for testing
     db.execute(
-        "INSERT INTO users (id, email, password_hash, credits, role) VALUES (?, ?, ?, ?, ?)",
-        [user_id, user.email, hashed_password, 100, 'user']
+        "INSERT INTO users (id, email, password_hash, credits, role, tier) VALUES (?, ?, ?, ?, ?, ?)",
+        [user_id, user.email, hashed_password, 100, 'user', 'standard']
     )
     
     return UserResponse(id=user_id, email=user.email, role='user', credits=100)

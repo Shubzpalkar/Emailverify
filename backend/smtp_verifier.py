@@ -2,28 +2,30 @@ import asyncio
 import aiosmtplib
 from typing import Tuple, Dict
 
+from config import settings
+
 async def connect_and_check(mx_server: str, email: str, sender_email: str = "test@verifier.local") -> Tuple[int, str]:
     """
     Connect to the SMTP server and perform the handshake.
     Returns (status_code, response_message)
     """
     try:
-        smtp = aiosmtplib.SMTP(hostname=mx_server, port=25, timeout=10)
+        smtp = aiosmtplib.SMTP(hostname=mx_server, port=25, timeout=settings.SMTP_CONNECT_TIMEOUT)
         await smtp.connect()
         # Some servers require EHLO/HELO
-        await smtp.ehlo()
+        await smtp.ehlo(timeout=settings.SMTP_COMMAND_TIMEOUT)
         
         # Test mail from
-        mail_from_response = await smtp.mail(sender_email)
+        mail_from_response = await smtp.mail(sender_email, timeout=settings.SMTP_COMMAND_TIMEOUT)
         if mail_from_response.code >= 400:
             msg = mail_from_response.message.lower()
             code = mail_from_response.code
-            await smtp.quit()
+            await smtp.quit(timeout=settings.SMTP_COMMAND_TIMEOUT)
             return code, f"error on MAIL FROM: {msg}"
             
         # Test rcpt to
-        rcpt_to_response = await smtp.rcpt(email)
-        await smtp.quit()
+        rcpt_to_response = await smtp.rcpt(email, timeout=settings.SMTP_COMMAND_TIMEOUT)
+        await smtp.quit(timeout=settings.SMTP_COMMAND_TIMEOUT)
         
         return rcpt_to_response.code, rcpt_to_response.message.lower()
     except aiosmtplib.SMTPException as e:
@@ -32,12 +34,12 @@ async def connect_and_check(mx_server: str, email: str, sender_email: str = "tes
         # Connection timeouts, DNS errors, etc.
         return 0, f"connection failed: {str(e)}"
 
-async def verify_smtp_with_retries(mx_server: str, email: str, sender_email: str = "test@verifier.local") -> Dict[str, str]:
+async def _verify_smtp_inner(mx_server: str, email: str, sender_email: str = "test@verifier.local") -> Dict[str, str]:
     """
     Verify email via SMTP with retry logic for temporary errors.
     Returns a dictionary with status and reason.
     """
-    delays = [5, 30, 120]
+    delays = settings.RETRY_DELAYS
     
     for attempt in range(len(delays) + 1): # Max 4 attempts (1 initial + 3 retries)
         code, msg = await connect_and_check(mx_server, email, sender_email)
@@ -78,6 +80,19 @@ async def verify_smtp_with_retries(mx_server: str, email: str, sender_email: str
         return {"status": "unknown", "reason": f"unhandled_smtp_response_{code}"}
         
     return {"status": "unknown", "reason": "max_retries_exceeded"}
+
+async def verify_smtp_with_retries(mx_server: str, email: str, sender_email: str = "test@verifier.local") -> Dict[str, str]:
+    try:
+        return await asyncio.wait_for(
+            _verify_smtp_inner(mx_server, email, sender_email),
+            timeout=settings.SMTP_HARD_TIMEOUT
+        )
+    except asyncio.TimeoutError:
+        return {
+            "status": "unknown",
+            "score": 0.1,
+            "reason": "hard_timeout"
+        }
 
 async def check_catch_all(mx_server: str, domain: str) -> bool:
     """

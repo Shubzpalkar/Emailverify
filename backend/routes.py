@@ -201,3 +201,17 @@ async def add_credits(user_id: str, amount: int, admin: UserResponse = Depends(r
     db.execute("UPDATE users SET credits = credits + ? WHERE id = ?", [amount, user_id])
     return {"message": f"Added {amount} credits to user {user_id}"}
 
+
+@admin_router.post("/users/{user_id}/tier")
+async def set_user_tier(
+    user_id: str,
+    tier: str,
+    admin: UserResponse = Depends(require_admin)
+):
+    from database import get_db_write_lock
+    if tier not in ("free", "standard", "power", "enterprise"):
+        raise HTTPException(status_code=400, detail="Invalid tier")
+    db = get_db()
+    async with get_db_write_lock():
+        db.execute("UPDATE users SET tier = ? WHERE id = ?", [tier, user_id])
+    return {"message": f"User {user_id} tier set to {tier}"}

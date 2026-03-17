@@ -3,6 +3,7 @@ import asyncio
 import datetime
 from typing import Dict, Any, Tuple
 from database import get_db
+from config import settings
 
 from dns_checks import check_domain
 from smtp_verifier import verify_smtp_with_retries, check_catch_all as check_catch_all_smtp
@@ -38,7 +39,9 @@ def check_disposable(domain: str) -> bool:
 
 async def get_domain_intelligence(domain: str) -> dict:
     db = get_db()
-    res = db.execute("SELECT mx_server, catch_all, disposable, reputation_score FROM domain_intelligence WHERE domain = ?", [domain]).fetchone()
+    res = db.execute("SELECT mx_server, catch_all, disposable, reputation_score FROM domain_intelligence "
+                     "WHERE domain = ? AND (epoch(CURRENT_TIMESTAMP) - epoch(last_checked)) < ?", 
+                     [domain, settings.DOMAIN_INTELLIGENCE_TTL]).fetchone()
     if res:
         return {
             "mx_server": res[0],
@@ -58,7 +61,9 @@ async def save_domain_intelligence(domain: str, info: dict):
 
 async def get_email_cache(email: str) -> dict:
     db = get_db()
-    res = db.execute("SELECT status, confidence FROM email_cache WHERE email = ?", [email]).fetchone()
+    res = db.execute("SELECT status, confidence FROM email_cache "
+                     "WHERE email = ? AND (epoch(CURRENT_TIMESTAMP) - epoch(verified_at)) < ?", 
+                     [email, settings.EMAIL_CACHE_TTL]).fetchone()
     if res:
         return {"status": res[0], "confidence": res[1]}
     return None

@@ -2,9 +2,15 @@ import duckdb
 from config import settings
 from passlib.context import CryptContext
 import uuid
+import asyncio
 
 # Global connection for the main application
 db = None
+
+_db_write_lock = asyncio.Lock()
+
+def get_db_write_lock():
+    return _db_write_lock
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
@@ -20,6 +26,8 @@ def init_db():
     
     # Enable multi-threading for the connection
     db.execute("PRAGMA threads=4")
+    db.execute("PRAGMA memory_limit='4GB'")
+    db.execute("PRAGMA temp_directory='/tmp'")
     
     # Create tables
     db.execute("""
@@ -95,6 +103,17 @@ def init_db():
         verified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
+
+    # Migrations
+    try:
+        db.execute("ALTER TABLE users ADD COLUMN tier VARCHAR DEFAULT 'standard'")
+    except Exception:
+        pass
+
+    try:
+        db.execute("ALTER TABLE domain_intelligence ADD COLUMN server_type VARCHAR DEFAULT 'unknown'")
+    except Exception:
+        pass
 
     # Seed an admin user if not exists
     admin_email = "admin@example.com"
