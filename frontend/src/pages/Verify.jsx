@@ -1,9 +1,10 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { UploadSimple } from '@phosphor-icons/react';
+import { UploadSimple, ArrowCircleDown } from '@phosphor-icons/react';
 import { apiCall } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
+import DownloadModal from '../components/DownloadModal';
 import './Verify.css';
 
 export default function Verify() {
@@ -16,6 +17,8 @@ export default function Verify() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
   const [dragOver, setDragOver] = useState(false);
+  const [activeJob, setActiveJob] = useState(null);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
 
   // Single verify state
   const [singleEmail, setSingleEmail] = useState('');
@@ -44,7 +47,13 @@ export default function Verify() {
       });
       setUploadProgress(`Job started! Processing ${res.total_emails.toLocaleString()} emails.`);
       showToast('Job started successfully');
-      setTimeout(() => navigate('/dashboard'), 1500);
+      
+      // Instead of navigating away immediately, we could poll here or just show the job
+      // For now, let's store it so the download section can appear if it completes
+      setActiveJob({ id: res.job_id, file_name: file.name, status: 'processing', counts: {} });
+      
+      // Auto-navigate after delay if not staying to watch progress
+      setTimeout(() => navigate('/dashboard'), 3000);
     } catch (err) {
       showToast(err.message || 'Upload failed', 'error');
       setUploading(false);
@@ -124,6 +133,25 @@ export default function Verify() {
                 <div className="progress" style={{ width: '100%' }} />
               </div>
               <p className="progress-text">{uploadProgress}</p>
+
+              {activeJob && activeJob.status === "completed" && (
+                <div className="download-section">
+                  <p className="download-hint">Your results are ready.</p>
+                  <button
+                    className="btn-download-trigger"
+                    onClick={() => setShowDownloadModal(true)}
+                  >
+                    <ArrowCircleDown size={18} />
+                    Download results
+                  </button>
+                  {showDownloadModal && (
+                    <DownloadModal
+                      job={activeJob}
+                      onClose={() => setShowDownloadModal(false)}
+                    />
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

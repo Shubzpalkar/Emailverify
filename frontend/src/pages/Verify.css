@@ -98,6 +98,47 @@
   font-size: 0.8rem;
 }
 
+.download-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 12px;
+  background: var(--bg-surface-elevated);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+}
+
+.download-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.btn-download-trigger {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: #1D9E75;
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.1s, opacity 0.15s;
+}
+
+.btn-download-trigger:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.btn-download-trigger:active {
+  transform: scale(0.98);
+}
+
 @media (max-width: 900px) {
   .verify-layout {
     grid-template-columns: 1fr;

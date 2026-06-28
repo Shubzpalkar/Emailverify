@@ -1,83 +1,211 @@
 import { useState, useEffect } from 'react';
-import { apiCall } from '../api/client';
+import { useAuth } from '../context/AuthContext';
+import { getMyUsers, createUser, updateUserCredits, updateUserTier, suspendUser, getAdminDashboard, getMyJobs } from '../api/client';
 import { useToast } from '../components/Toast';
 import './Admin.css';
 
 export default function Admin() {
   const { showToast } = useToast();
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState('users');
+  
   const [users, setUsers] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  const [dashboard, setDashboard] = useState(null);
 
-  const loadUsers = async () => {
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [newUser, setNewUser] = useState({ email: '', password: '', initial_credits: '' });
+
+  const loadData = async () => {
     try {
-      const data = await apiCall('/admin/users');
-      setUsers(data);
+      if (activeTab === 'users') {
+        const u = await getMyUsers();
+        setUsers(u);
+      } else if (activeTab === 'jobs') {
+        const j = await getMyJobs();
+        setJobs(j);
+      }
+      const d = await getAdminDashboard();
+      setDashboard(d);
     } catch (err) {
-      showToast(err.message || 'Failed to load users', 'error');
+      showToast(err.message || 'Failed to load data', 'error');
     }
   };
 
   useEffect(() => {
-    loadUsers();
-  }, []);
+    loadData();
+  }, [activeTab]);
 
-  const addCredits = async (userId, amount) => {
+  const handleCreateUser = async (e) => {
+    e.preventDefault();
     try {
-      await apiCall(`/admin/users/${userId}/credits?amount=${amount}`, { method: 'POST' });
-      showToast(`Added ${amount.toLocaleString()} credits`);
-      loadUsers();
+      await createUser({ 
+        email: newUser.email, 
+        password: newUser.password || undefined, 
+        initial_credits: Number(newUser.initial_credits) || 0 
+      });
+      showToast('User created successfully');
+      setShowUserModal(false);
+      loadData();
     } catch (err) {
-      showToast(err.message || 'Failed to add credits', 'error');
+      showToast(err.message, 'error');
+    }
+  };
+
+  const handleCredits = async (userId) => {
+    const amt = parseInt(prompt("Amount to add/remove:", "1000"), 10);
+    if (!amt || isNaN(amt)) return;
+    try {
+      await updateUserCredits(userId, amt);
+      showToast('Credits updated');
+      loadData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const handleTier = async (userId) => {
+    const tier = prompt("Enter new tier (free, standard, power, enterprise):", "standard");
+    if (!tier) return;
+    try {
+      await updateUserTier(userId, tier.toLowerCase());
+      showToast('Tier updated');
+      loadData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const handleSuspend = async (userId) => {
+    try {
+      await suspendUser(userId);
+      showToast('User suspension toggled');
+      loadData();
+    } catch (err) {
+      showToast(err.message, 'error');
     }
   };
 
   return (
     <section className="container page-enter" style={{ paddingTop: '1rem' }}>
-      <div className="dashboard-header" style={{ marginTop: '3rem', marginBottom: '2rem' }}>
-        <h2>Admin Panel</h2>
+      <div className="dashboard-header" style={{ marginTop: '2rem', marginBottom: '1rem' }}>
+        <h2>Admin Panel — My Users</h2>
       </div>
 
-      <div className="glass-card admin-table-card">
-        <div className="card-header">
-          <h3>All Users</h3>
+      {dashboard && (
+        <div style={{ padding: '1rem', background: 'var(--surface)', borderRadius: '1rem', marginBottom: '2rem', display: 'flex', gap: '2rem', fontSize: '0.95rem' }}>
+          <div><strong>My Credit Pool remaining:</strong> {dashboard.credits_remaining === 999999999 ? 'Unlimited' : dashboard.credits_remaining.toLocaleString()}</div>
+          <div><strong>Total Scoped Users:</strong> {dashboard.total_users}</div>
+          <div><strong>Total Scoped Jobs:</strong> {dashboard.total_jobs}</div>
         </div>
-        <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>User ID</th>
-                <th>Email</th>
-                <th>Role</th>
-                <th>Credits</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map(user => (
-                <tr key={user.id}>
-                  <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
-                    {user.id.substring(0, 8)}...
-                  </td>
-                  <td>{user.email}</td>
-                  <td>
-                    <span className={`tag tag-${user.role === 'admin' ? 'warning' : 'valid'}`}>
-                      {user.role}
-                    </span>
-                  </td>
-                  <td style={{ fontWeight: 600 }}>{user.credits.toLocaleString()}</td>
-                  <td className="admin-actions">
-                    <button className="btn-secondary btn-small" onClick={() => addCredits(user.id, 10000)}>
-                      +10k
-                    </button>
-                    <button className="btn-secondary btn-small" onClick={() => addCredits(user.id, 100000)}>
-                      +100k
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      )}
+
+      <div className="tabs" style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
+        <button className={`btn-secondary ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>My Users</button>
+        <button className={`btn-secondary ${activeTab === 'jobs' ? 'active' : ''}`} onClick={() => setActiveTab('jobs')}>My Jobs</button>
       </div>
+
+      {activeTab === 'users' && (
+        <div className="glass-card admin-table-card">
+          <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3>Scoped Users</h3>
+            <button className="btn-primary" onClick={() => setShowUserModal(true)}>+ Create User</button>
+          </div>
+          <div className="table-container mt-4">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>Status</th>
+                  <th>Tier</th>
+                  <th>Credits</th>
+                  <th>Jobs / verified</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map(u => (
+                  <tr key={u.id}>
+                    <td>{u.email}</td>
+                    <td><span className={`tag tag-${u.is_active ? 'valid' : 'invalid'}`}>{u.is_active ? 'Active' : 'Suspended'}</span></td>
+                    <td><span className="tag tag-unknown">{u.tier}</span></td>
+                    <td style={{ fontWeight: 600 }}>{u.credit_pool.toLocaleString()}</td>
+                    <td style={{ color: 'var(--text-muted)' }}>{u.job_count} / {u.emails_verified.toLocaleString()}</td>
+                    <td className="admin-actions">
+                      <button className="btn-secondary btn-small" onClick={() => handleCredits(u.id)}>+/- Credits</button>
+                      <button className="btn-secondary btn-small" onClick={() => handleTier(u.id)}>Set Tier</button>
+                      <button className="btn-secondary btn-small" onClick={() => handleSuspend(u.id)}>Suspend</button>
+                    </td>
+                  </tr>
+                ))}
+                {users.length === 0 && (
+                  <tr>
+                    <td colSpan="6" style={{ textAlign: 'center', padding: '2rem' }}>No users managed yet.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'jobs' && (
+        <div className="glass-card">
+          <div className="card-header">
+            <h3>Scoped Jobs</h3>
+          </div>
+          <div className="table-container mt-4">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Job ID</th>
+                  <th>User Email</th>
+                  <th>File Name</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobs.map(j => (
+                  <tr key={j.id}>
+                    <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{j.id.substring(0,8)}</td>
+                    <td>{j.user_email}</td>
+                    <td>{j.file_name}</td>
+                    <td><span className={`tag tag-${j.status === 'completed' ? 'valid' : 'warning'}`}>{j.status}</span></td>
+                    <td>{new Date(j.created_at).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {showUserModal && (
+        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="glass-card page-enter" style={{ minWidth: '400px' }}>
+            <h2>Create New Scoped User</h2>
+            <form onSubmit={handleCreateUser}>
+              <div style={{ marginBottom: '1rem', marginTop: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem' }}>Email</label>
+                <input type="email" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} className="input-field w-full" required />
+              </div>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem' }}>Password (Leaves blank for auto-generate)</label>
+                <input type="password" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} className="input-field w-full" />
+              </div>
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem' }}>Initial Credits (deducted from your pool)</label>
+                <input type="number" value={newUser.initial_credits} onChange={e => setNewUser({...newUser, initial_credits: e.target.value})} className="input-field w-full" required />
+              </div>
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button type="submit" className="btn-primary" style={{ flex: 1 }}>Create</button>
+                <button type="button" className="btn-secondary" onClick={() => setShowUserModal(false)} style={{ flex: 1 }}>Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

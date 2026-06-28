@@ -5,8 +5,10 @@ try:
 except ImportError:
     pass
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import os
 import logging
@@ -17,6 +19,8 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
     datefmt="%H:%M:%S",
 )
+
+logger = logging.getLogger("api_errors")
 
 from database import get_db, init_db
 from config import settings
@@ -70,13 +74,28 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
-from routes import router as verify_router, job_router, dashboard_router, admin_router
+from routes import router as verify_router, job_router, dashboard_router, admin_router, superadmin_router, api_keys_router
 app.include_router(verify_router)
 app.include_router(job_router)
 app.include_router(dashboard_router)
 app.include_router(admin_router)
+app.include_router(superadmin_router)
+app.include_router(api_keys_router)
 
 # Healthcheck
 @app.get("/api/health")
 def healthcheck():
     return {"status": "healthy"}
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    error_details = exc.errors()
+    logger.error(f"Validation error for {request.method} {request.url.path}: {error_details}")
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": error_details, "body": exc.body},
+    )
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

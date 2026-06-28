@@ -194,11 +194,34 @@ async def background_worker(job_id: str, email_list: List[str]):
         WHERE id = ?
         """, [len(emails_to_verify), job_id])
         
+        # Deduct credits from user_id upon completion
+        db.execute(
+            "UPDATE users SET credit_pool = GREATEST(0, credit_pool - ?) WHERE id = (SELECT user_id FROM verification_jobs WHERE id = ?)",
+            [total, job_id]
+        )
+        
         # Flush DB output buffer unconditionally at job conclusion
         await _flush_result_buffer(db)
 
         # Job complete - log summary
         db.execute("UPDATE verification_jobs SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?", [job_id])
+        
+        try:
+            user_row = db.execute(
+                "SELECT u.email FROM users u JOIN verification_jobs j ON j.user_id = u.id WHERE j.id = ?",
+                [job_id]
+            ).fetchone()
+            if user_row:
+                user_email = user_row[0]
+                from email_service import EmailService
+                await EmailService.sendVerificationCompletedEmail(
+                    to_email=user_email,
+                    job_id=job_id,
+                    total_emails=total,
+                    valid_emails=stats.get('valid', 0)
+                )
+        except Exception as email_err:
+            logger.error(f"[Job {job_id}] Failed to send job completion email: {email_err}")
         
         summary_parts = [f"{status}: {count}" for status, count in sorted(stats.items())]
         logger.info(f"[Job {job_id}] 🎉 Job completed! Results: {', '.join(summary_parts)}")

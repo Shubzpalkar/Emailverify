@@ -1,18 +1,36 @@
 import aiodns
 import asyncio
-from typing import Tuple, List
+import dns.resolver
+import dns.reversename
+from typing import Tuple, List, Optional
 from config import settings
 from database import get_db, get_db_write_lock
 
-# Use robust public DNS resolvers
-resolver = aiodns.DNSResolver(
-    nameservers=settings.DNS_RESOLVERS,
-    timeout=5,
-    tries=2,
-)
+# Cache DNSResolver per event loop to avoid loop mismatch errors
+_resolver_cache = {}
+
+def get_resolver():
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return aiodns.DNSResolver(
+            nameservers=settings.DNS_RESOLVERS,
+            timeout=5,
+            tries=2
+        )
+    
+    if loop not in _resolver_cache:
+        _resolver_cache[loop] = aiodns.DNSResolver(
+            nameservers=settings.DNS_RESOLVERS,
+            timeout=5,
+            tries=2,
+            loop=loop
+        )
+    return _resolver_cache[loop]
 
 async def resolve_domain(domain: str) -> bool:
     """Check if the domain resolves to any A or AAAA records."""
+    resolver = get_resolver()
     try:
         # Check A record
         await asyncio.wait_for(
@@ -35,6 +53,7 @@ async def resolve_domain(domain: str) -> bool:
 
 async def lookup_mx(domain: str) -> Tuple[bool, List[str]]:
     """Lookup MX records for a domain and return them sorted by priority."""
+    resolver = get_resolver()
     try:
         answers = await asyncio.wait_for(
             resolver.query(domain, 'MX'),
@@ -117,3 +136,55 @@ async def prefetch_domain_types(domains: list[str]) -> dict[str, str]:
         for domain, dtype in results
         if not isinstance(dtype, Exception)
     }
+async def resolve_mx_ip(hostname: str) -> Optional[str]:
+    """
+    Resolve an MX hostname to its first A record IP address.
+    Uses dnspython in a separate thread for Windows reliability.
+    """
+    if not hostname:
+        return None
+        
+    def _sync_a_lookup():
+        try:
+            res = dns.resolver.Resolver()
+            res.timeout = settings.DNS_LOOKUP_TIMEOUT
+            res.lifetime = settings.DNS_LOOKUP_TIMEOUT
+            if settings.DNS_RESOLVERS:
+                res.nameservers = settings.DNS_RESOLVERS
+                
+            answers = res.resolve(hostname, "A")
+            if answers:
+                return str(answers[0])
+        except Exception:
+            pass
+        return None
+
+    return await asyncio.to_thread(_sync_a_lookup)
+
+async def get_ptr_record(ip_address: str) -> Optional[str]:
+    """
+    Perform a reverse DNS lookup (PTR) for an IP address.
+    Uses dnspython in a separate thread to avoid blocking.
+    """
+    if not ip_address:
+        return None
+        
+    def _sync_ptr_lookup():
+        try:
+            rev_name = dns.reversename.from_address(ip_address)
+            # Use default system resolver for PTR or a specific one if needed
+            # For simplicity and robustness, we use a fresh resolver instance
+            res = dns.resolver.Resolver()
+            res.timeout = settings.DNS_LOOKUP_TIMEOUT
+            res.lifetime = settings.DNS_LOOKUP_TIMEOUT
+            if settings.DNS_RESOLVERS:
+                res.nameservers = settings.DNS_RESOLVERS
+                
+            answers = res.resolve(rev_name, "PTR")
+            if answers:
+                return str(answers[0].target).rstrip('.')
+        except Exception:
+            pass
+        return None
+
+    return await asyncio.to_thread(_sync_ptr_lookup)

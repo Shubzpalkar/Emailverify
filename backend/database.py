@@ -42,6 +42,18 @@ def init_db():
     """)
     
     db.execute("""
+    CREATE TABLE IF NOT EXISTS api_keys (
+        id VARCHAR PRIMARY KEY,
+        user_id VARCHAR NOT NULL REFERENCES users(id),
+        name VARCHAR NOT NULL,
+        key_hash VARCHAR NOT NULL,
+        prefix VARCHAR NOT NULL,
+        last_used TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+    
+    db.execute("""
     CREATE TABLE IF NOT EXISTS verification_jobs (
         id VARCHAR PRIMARY KEY,
         user_id VARCHAR NOT NULL REFERENCES users(id),
@@ -104,6 +116,17 @@ def init_db():
     );
     """)
 
+    db.execute("""
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id VARCHAR PRIMARY KEY,
+        user_id VARCHAR NOT NULL,
+        token VARCHAR UNIQUE NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        used BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
     # Migrations
     try:
         db.execute("ALTER TABLE users ADD COLUMN tier VARCHAR DEFAULT 'standard'")
@@ -115,6 +138,20 @@ def init_db():
     except Exception:
         pass
 
+    migrations = [
+        "ALTER TABLE users ADD COLUMN admin_id VARCHAR DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN credit_pool INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE users ADD COLUMN created_by VARCHAR DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN last_login TIMESTAMP DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN custom_rate_limit INTEGER DEFAULT NULL"
+    ]
+    for sql in migrations:
+        try:
+            db.execute(sql)
+        except Exception:
+            pass
+
     # Seed an admin user if not exists
     admin_email = "admin@example.com"
     res = db.execute("SELECT id FROM users WHERE email = ?", [admin_email]).fetchone()
@@ -125,3 +162,19 @@ def init_db():
             "INSERT INTO users (id, email, password_hash, credits, role) VALUES (?, ?, ?, ?, ?)",
             [admin_id, admin_email, hashed_password, 1000000, 'admin']
         )
+
+    # Seed Superadmin
+    existing_sa = db.execute(
+        "SELECT id FROM users WHERE role = 'superadmin' LIMIT 1"
+    ).fetchone()
+
+    if not existing_sa:
+        from datetime import datetime, timezone
+        sa_id = str(uuid.uuid4())
+        hashed = pwd_context.hash(settings.SUPERADMIN_PASSWORD)
+        db.execute("""
+            INSERT INTO users (id, email, password_hash, role, credit_pool, is_active, created_at)
+            VALUES (?, ?, ?, 'superadmin', 999999999, TRUE, ?)
+        """, [sa_id, settings.SUPERADMIN_EMAIL, hashed, datetime.now(timezone.utc)])
+        print(f"[BOOT] Superadmin created: {settings.SUPERADMIN_EMAIL} / {settings.SUPERADMIN_PASSWORD}")
+        print(f"[BOOT] CHANGE THIS PASSWORD IMMEDIATELY after first login.")

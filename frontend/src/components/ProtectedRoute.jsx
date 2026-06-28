@@ -16,8 +16,13 @@ export default function ProtectedRoute({ requiredRole }) {
     return <Navigate to="/login" replace />;
   }
 
-  if (requiredRole && user.role !== requiredRole) {
-    return <Navigate to="/dashboard" replace />;
+  if (requiredRole) {
+    const allowed = Array.isArray(requiredRole)
+      ? requiredRole.includes(user.role)
+      : user.role === requiredRole;
+    if (!allowed) {
+      return <Navigate to="/dashboard" replace />;
+    }
   }
 
   return <Outlet />;

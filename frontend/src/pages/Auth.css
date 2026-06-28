@@ -27,3 +27,34 @@
   color: var(--text-muted);
   font-size: 0.9rem;
 }
+
+.forgot-password-link {
+  text-align: right;
+  margin-top: -0.8rem;
+  margin-bottom: 1.5rem;
+}
+
+.forgot-password-link a {
+  font-size: 0.85rem;
+  color: var(--primary);
+  text-decoration: none;
+  transition: opacity 0.2s;
+}
+
+.forgot-password-link a:hover {
+  opacity: 0.8;
+  text-decoration: underline;
+}
+
+.success-state {
+  text-align: center;
+}
+
+.success-state p {
+  margin-bottom: 1rem;
+}
+
+.success-state .subtext {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}

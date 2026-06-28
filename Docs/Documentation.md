@@ -20,6 +20,9 @@ The Email Verification Portal is a self-hosted, professional-grade tool designed
 - **Credit System**: Internal economy to manage and limit user usage.
 - **Admin Panel**: Centralized control for user management and credit allocation.
 - **Intelligent Caching**: Reuses verification results and domain behaviors to improve speed and bypass IP rate limits.
+- **Password Reset**: Secure, token-based recovery system with 1-hour expiration.
+- **API Access**: Programmatic verification via SHA-256 hashed API keys.
+- **PTR Validation**: Reverse DNS checks on target MX IPs for advanced delivery diagnostics.
 
 ### 1.4 Status Classifications
 | Status | Description |
@@ -56,8 +59,8 @@ The backend is a monolithic FastAPI application designed for high-concurrency ba
 | **`auth.py`** | Authentication logic. Defines Pydantic schemas for user registration/login, handles Bcrypt password hashing, issues JWT tokens, and provides dependency functions like `get_current_user` to lock down protected routes. |
 | **`routes.py`** | HTTP API Endpoints. Groups endpoints via `APIRouter` for `/auth`, `/jobs` (file upload and progress polling), `/dashboard` (metrics aggregation), and `/admin` (user management and credit allocation). |
 | **`engine.py`** | Core Verification Logic. Executes the 7-step pipeline on a single email. Handles syntax regex, cached result lookups, DNS MX record resolution, disposable domain checking, role-based account fuzzy matching, and deep SMTP handshakes. |
-| **`dns_checks.py`** | Async DNS Resolver. Utilizes `aiodns` to query A, AAAA, and MX records asynchronously, ensuring the engine doesn't block while waiting on external name servers. |
 | **`smtp_verifier.py`** | SMTP Connection Handler. Uses `aiosmtplib` to connect to target MX servers, send `HELO/EHLO`, `MAIL FROM`, and `RCPT TO` commands. Implements smart retries for Greylisting (450) and handles SSL/TLS downgrades. |
+| **`dns_checks.py`** | Async DNS Resolver. Now includes **PTR Validation** (Reverse DNS) to detect if target mail servers or sender IPs lack valid hostnames, providing diagnostic context in SMTP responses. |
 | **`worker.py`** | Background Processing Engine. Consumes uploaded CSV lists in the background using `asyncio.gather`. Enforces concurrency limits (`asyncio.Semaphore`) per domain and global rate limits to prevent IP blacklisting. Logs detailed progress to the terminal and batches write-backs to DuckDB. |
 
 #### 2.2.2 Frontend (`/frontend`)
@@ -73,6 +76,9 @@ The frontend is a React Single Page Application (SPA) built with Vite, utilizing
 | **`src/pages/Landing.jsx`** | Marketing entry point containing hero sections and a 3D CSS mockup card visualizing sample verification results. |
 | **`src/pages/Auth.css` / `.jsx`** | Shared styles and logic for `Login.jsx` and `Signup.jsx` forms. |
 | **`src/pages/Dashboard.jsx`** | User Hub. Displays total verification metrics, remaining credits, and a table of recent jobs. Utilizes a recursive `setInterval` polling loop (every 5s) if any job is currently in "processing" state to update progress bars. |
+| **`src/pages/ForgotPassword.jsx`** | Password Recovery. Allows users to request a timed reset link via email (currently prints to backend console). |
+| **`src/pages/ResetPassword.jsx`** | Secure Reset. Captures tokens from URL to allow setting a new account password. |
+| **`src/pages/APIKeys.jsx`** | Developer Settings. Interface to generate (with sk_live_ prefix), monitor, and revoke programmatic API keys. |
 | **`src/pages/Verify.jsx`** | Action Center. Provides a drag-and-drop file upload zone for bulk CSV verification (converting files to `FormData` and POSTing to backend) and a single-email checking form with detailed confidence-scoring results. |
 | **`src/pages/Admin.jsx`** | Management Interface. Protected route (role === 'admin') to view all registered users and assign virtual credits. |
 | **`vite.config.js`** | Dev Server config. Noteworthy for its explicit proxying of any `/api` prefix request straight to localhost:8000 to bypass CORS during local development. |
@@ -96,6 +102,8 @@ The application follows a modular, asynchronous architecture:
 ### 2.5 Security & Optimizations
 - **Rate Limiting**: Throttles verifications to 100/min globally and 5 concurrent per domain to avoid IP blacklisting.
 - **HTTP-Only Cookies**: JWT tokens are stored securely to prevent XSS.
+- **API Key Security**: Keys are stored as SHA-256 hashes; raw keys are only shown once upon creation and never stored.
+- **Timed Tokens**: Password reset tokens use `itsdangerous` signed serializers with a strict 60-minute TTL.
 - **DuckDB Concurrency**: Uses multi-threading (`PRAGMA threads`) for fast data analysis.
 
 ### 2.6 Logging & Monitoring
@@ -136,4 +144,5 @@ To achieve high accuracy, deploy the portal on a **VPS with a dedicated IP** (Di
 > Residential IPs are often on the "Spamhaus PBL", which causes most professional mail servers to block SMTP handshakes. A VPS IP provides the "trust" needed for 250 OK responses.
 
 ---
-*Updated: 2026-03-15*
+*Updated: 2026-04-04*
+F

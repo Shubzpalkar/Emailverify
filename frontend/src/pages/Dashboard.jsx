@@ -1,15 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Coins, EnvelopeSimple, DownloadSimple } from '@phosphor-icons/react';
+import { Coins, EnvelopeSimple, ArrowCircleDown } from '@phosphor-icons/react';
 import { apiCall } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
+import DownloadModal from '../components/DownloadModal';
 import './Dashboard.css';
 
 export default function Dashboard() {
   const { user } = useAuth();
   const { showToast } = useToast();
   const [metrics, setMetrics] = useState(null);
+  const [downloadJob, setDownloadJob] = useState(null);
   const pollRef = useRef(null);
 
   const loadDashboard = async () => {
@@ -55,7 +57,7 @@ export default function Dashboard() {
           <Coins size={32} weight="fill" color="#fbbf24" />
           <div>
             <span className="label">Credits Available</span>
-            <span className="value">{metrics?.credits?.toLocaleString() ?? '...'}</span>
+            <span className="value">{metrics?.credit_pool?.toLocaleString() ?? '...'}</span>
           </div>
           <Link to="/verify" className="btn-primary btn-small">Top up</Link>
         </div>
@@ -125,14 +127,13 @@ export default function Dashboard() {
                     <td>{new Date(job.created_at).toLocaleDateString()}</td>
                     <td>
                       {job.status === 'completed' ? (
-                        <a
-                          href={`/api/jobs/${job.id}/export`}
-                          className="btn-secondary btn-small"
-                          target="_blank"
-                          rel="noreferrer"
+                        <button
+                          className="btn-icon"
+                          title="Download results"
+                          onClick={() => setDownloadJob(job)}
                         >
-                          <DownloadSimple size={16} /> Download
-                        </a>
+                          <ArrowCircleDown size={20} />
+                        </button>
                       ) : (
                         <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Processing...</span>
                       )}
@@ -144,6 +145,13 @@ export default function Dashboard() {
           </table>
         </div>
       </div>
+
+      {downloadJob && (
+        <DownloadModal
+          job={downloadJob}
+          onClose={() => setDownloadJob(null)}
+        />
+      )}
     </section>
   );
 }

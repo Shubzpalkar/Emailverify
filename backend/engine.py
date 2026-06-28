@@ -5,7 +5,7 @@ from typing import Dict, Any, Tuple
 from database import get_db
 from config import settings
 
-from dns_checks import check_domain
+from dns_checks import check_domain, resolve_mx_ip, get_ptr_record
 from smtp_verifier import verify_smtp_with_retries, check_catch_all as check_catch_all_smtp
 
 # Strict email syntax validation
@@ -199,6 +199,17 @@ async def verify_single_email(email: str, check_catch_all: bool = True) -> Dict[
     # 5. SMTP Mailbox Verification (with retries)
     if domain_info["mx_server"]:
         smtp_res = await verify_smtp_with_retries(domain_info["mx_server"], email)
+        
+        # --- PTR Validation Logic (Diagnostic Enrichment) ---
+        # Trigger on unknowns, blocks, or connection failures to provide context
+        if smtp_res["status"] == "unknown" or any(x in smtp_res["reason"].lower() for x in ["block", "failed", "timeout"]):
+            mx_ip = await resolve_mx_ip(domain_info["mx_server"])
+            if mx_ip:
+                ptr_record = await get_ptr_record(mx_ip)
+                if not ptr_record:
+                    smtp_res["reason"] += " [Target server missing PTR record]"
+                else:
+                    smtp_res["reason"] += f" [PTR: {ptr_record}]"
     else:
         smtp_res = {"status": "invalid", "reason": "no_mx_server"}
 

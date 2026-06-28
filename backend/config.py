@@ -3,6 +3,8 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Email Verification Portal"
+    SUPERADMIN_EMAIL: str = "superadmin@system.local"
+    SUPERADMIN_PASSWORD: str = "SuperAdmin@123"
     DATABASE_PATH: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "email_verifier.db")
     SECRET_KEY: str = "super_secret_key_change_in_production"
     ALGORITHM: str = "HS256"
@@ -53,6 +55,17 @@ class Settings(BaseSettings):
     
     # Worker configuration
     CONCURRENT_WORKERS: int = 20
+    
+    # Download configuration
+    DOWNLOAD_CHUNK_SIZE: int = 1000  # rows fetched per DuckDB chunk
+    
+    # SMTP Email Configuration
+    SMTP_HOST: str = "localhost"
+    SMTP_PORT: int = 1025
+    SMTP_USERNAME: str | None = None
+    SMTP_PASSWORD: str | None = None
+    SMTP_SENDER: str = "noreply@system.local"
+    SMTP_USE_TLS: bool = False
     
     class Config:
         env_file = ".env"
