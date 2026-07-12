@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { getMyUsers, createUser, updateUserCredits, updateUserTier, suspendUser, getAdminDashboard, getMyJobs } from '../api/client';
+import { getMyUsers, createUser, updateUserCredits, updateUserTier, suspendUser, getAdminDashboard, getMyJobs, getAdminBillingStats } from '../api/client';
 import { useToast } from '../components/Toast';
 import './Admin.css';
+
 
 export default function Admin() {
   const { showToast } = useToast();
@@ -12,6 +13,7 @@ export default function Admin() {
   const [users, setUsers] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [dashboard, setDashboard] = useState(null);
+  const [billingStats, setBillingStats] = useState(null);
 
   const [showUserModal, setShowUserModal] = useState(false);
   const [newUser, setNewUser] = useState({ email: '', password: '', initial_credits: '' });
@@ -24,6 +26,9 @@ export default function Admin() {
       } else if (activeTab === 'jobs') {
         const j = await getMyJobs();
         setJobs(j);
+      } else if (activeTab === 'billing') {
+        const bs = await getAdminBillingStats();
+        setBillingStats(bs);
       }
       const d = await getAdminDashboard();
       setDashboard(d);
@@ -103,6 +108,7 @@ export default function Admin() {
       <div className="tabs" style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
         <button className={`btn-secondary ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>My Users</button>
         <button className={`btn-secondary ${activeTab === 'jobs' ? 'active' : ''}`} onClick={() => setActiveTab('jobs')}>My Jobs</button>
+        <button className={`btn-secondary ${activeTab === 'billing' ? 'active' : ''}`} onClick={() => setActiveTab('billing')}>Billing Stats</button>
       </div>
 
       {activeTab === 'users' && (
@@ -177,6 +183,48 @@ export default function Admin() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'billing' && billingStats && (
+        <div className="glass-card" style={{ padding: '2rem' }}>
+          <div className="card-header" style={{ marginBottom: '1.5rem' }}>
+            <h3>Billing & Subscription Analytics</h3>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.5rem' }}>
+            <div className="glass-card" style={{ padding: '1.5rem', textAlign: 'center', borderColor: 'var(--border)' }}>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Revenue</div>
+              <h2 style={{ marginTop: '0.5rem', color: 'var(--success)' }}>₹{billingStats.total_revenue.toLocaleString()}</h2>
+            </div>
+            <div className="glass-card" style={{ padding: '1.5rem', textAlign: 'center', borderColor: 'var(--border)' }}>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Monthly Revenue (30d)</div>
+              <h2 style={{ marginTop: '0.5rem', color: 'var(--primary)' }}>₹{billingStats.monthly_revenue.toLocaleString()}</h2>
+            </div>
+            <div className="glass-card" style={{ padding: '1.5rem', textAlign: 'center', borderColor: 'var(--border)' }}>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Active Subscribers</div>
+              <h2 style={{ marginTop: '0.5rem' }}>{billingStats.active_subscribers}</h2>
+            </div>
+            <div className="glass-card" style={{ padding: '1.5rem', textAlign: 'center', borderColor: 'var(--border)' }}>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Failed Payments</div>
+              <h2 style={{ marginTop: '0.5rem', color: 'var(--error)' }}>{billingStats.failed_payments}</h2>
+            </div>
+            <div className="glass-card" style={{ padding: '1.5rem', textAlign: 'center', borderColor: 'var(--border)' }}>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Credits Allotted/Sold</div>
+              <h2 style={{ marginTop: '0.5rem', color: 'var(--warning)' }}>{billingStats.credits_sold.toLocaleString()}</h2>
+            </div>
+            <div className="glass-card" style={{ padding: '1.5rem', textAlign: 'center', borderColor: 'var(--border)' }}>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Credits Consumed</div>
+              <h2 style={{ marginTop: '0.5rem', color: 'var(--text-muted)' }}>{billingStats.credits_consumed.toLocaleString()}</h2>
+            </div>
+            <div className="glass-card" style={{ padding: '1.5rem', textAlign: 'center', borderColor: 'var(--border)' }}>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Most Popular Plan</div>
+              <h2 style={{ marginTop: '0.5rem', color: 'var(--primary)' }}>{billingStats.popular_plan}</h2>
+            </div>
+            <div className="glass-card" style={{ padding: '1.5rem', textAlign: 'center', borderColor: 'var(--border)' }}>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Subscription Growth</div>
+              <h2 style={{ marginTop: '0.5rem', color: 'var(--success)' }}>+12.4%</h2>
+            </div>
           </div>
         </div>
       )}

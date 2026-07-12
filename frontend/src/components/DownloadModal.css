@@ -1,0 +1,213 @@
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-card {
+  background: var(--bg-surface, #fff);
+  border-radius: 16px;
+  padding: 28px;
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--border);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+
+.modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+  margin: 0;
+}
+
+.modal-filename {
+  font-size: 12px;
+  color: var(--text-muted, #999);
+  margin: 0 0 20px;
+  word-break: break-all;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted, #aaa);
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.modal-close:hover {
+  color: var(--text-primary, #333);
+}
+
+.section-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted, #999);
+  margin: 15px 0 10px;
+}
+
+/* Status chips */
+.chips-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.status-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1.5px solid var(--chip-color, #ccc);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-main, #333);
+  transition: background 0.15s, color 0.15s;
+}
+
+.status-chip.selected {
+  background: var(--chip-color);
+  color: #fff;
+  border-color: var(--chip-color);
+}
+
+.status-chip.empty {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--chip-color);
+  flex-shrink: 0;
+}
+
+.status-chip.selected .chip-dot {
+  background: rgba(255,255,255,0.8);
+}
+
+.chip-count {
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+/* Column checkboxes */
+.columns-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 15px;
+}
+
+.col-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text-main, #333);
+  cursor: pointer;
+}
+
+.col-check input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: #1D9E75;
+}
+
+.col-check.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Row count */
+.count-row {
+  padding: 12px 16px;
+  background: var(--bg-surface-elevated);
+  border-radius: 10px;
+  font-size: 13px;
+  margin-bottom: 20px;
+  text-align: center;
+  border: 1px solid var(--border);
+}
+
+.count-display {
+  color: var(--text-main);
+  font-weight: 500;
+}
+
+.count-loading {
+  color: var(--text-muted);
+}
+
+.count-empty {
+  color: #BA7517;
+  font-weight: 500;
+}
+
+/* Download buttons */
+.download-btns {
+  display: flex;
+  gap: 12px;
+}
+
+.btn-download {
+  flex: 1;
+  padding: 11px 0;
+  border-radius: 10px;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.btn-download:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-download:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+.btn-download.csv {
+  background: #1D9E75;
+  color: #fff;
+}
+
+.btn-download.xlsx {
+  background: #217346;  /* Excel green */
+  color: #fff;
+}
+
+@media (max-width: 480px) {
+  .columns-grid { grid-template-columns: repeat(2, 1fr); }
+  .download-btns { flex-direction: column; }
+}

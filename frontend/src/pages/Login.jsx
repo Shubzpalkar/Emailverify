@@ -8,21 +8,43 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const { login, googleLogin } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
+
+  const routeAfterLogin = (firebaseUser) => {
+    if (!firebaseUser?.emailVerified) {
+      navigate('/verify-email', { replace: true });
+      return;
+    }
+    navigate('/dashboard', { replace: true });
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      await login(email, password);
+      const { firebaseUser } = await login(email, password);
       showToast('Welcome back!');
-      navigate('/dashboard');
+      routeAfterLogin(firebaseUser);
     } catch (err) {
       showToast(err.message || 'Login failed', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setGoogleLoading(true);
+    try {
+      const { firebaseUser } = await googleLogin();
+      showToast('Welcome back!');
+      routeAfterLogin(firebaseUser);
+    } catch (err) {
+      showToast(err.message || 'Google sign-in failed', 'error');
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -48,7 +70,7 @@ export default function Login() {
             <input
               id="login-password"
               type="password"
-              placeholder="••••••••"
+              placeholder="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
               required
@@ -57,10 +79,14 @@ export default function Login() {
           <div className="forgot-password-link">
             <Link to="/forgot-password">Forgot password?</Link>
           </div>
-          <button type="submit" className="btn-primary btn-full" disabled={loading}>
+          <button type="submit" className="btn-primary btn-full" disabled={loading || googleLoading}>
             {loading ? 'Authenticating...' : 'Log In'}
           </button>
         </form>
+        <div className="auth-divider"><span>or</span></div>
+        <button type="button" className="btn-secondary btn-full" onClick={handleGoogleLogin} disabled={loading || googleLoading}>
+          {googleLoading ? 'Connecting...' : 'Continue with Google'}
+        </button>
         <p className="auth-switch">
           Don't have an account? <Link to="/signup">Sign up</Link>
         </p>

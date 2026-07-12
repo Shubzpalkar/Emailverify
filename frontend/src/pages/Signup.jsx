@@ -8,7 +8,8 @@ export default function Signup() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signup } = useAuth();
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const { signup, googleLogin } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
@@ -17,12 +18,25 @@ export default function Signup() {
     setLoading(true);
     try {
       await signup(email, password);
-      showToast('Account created! Please log in.');
-      navigate('/login');
+      showToast('Account created. Please verify your email.');
+      navigate('/verify-email', { replace: true });
     } catch (err) {
       showToast(err.message || 'Signup failed', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleSignup = async () => {
+    setGoogleLoading(true);
+    try {
+      await googleLogin();
+      showToast('Account ready.');
+      navigate('/dashboard', { replace: true });
+    } catch (err) {
+      showToast(err.message || 'Google sign-in failed', 'error');
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -48,16 +62,21 @@ export default function Signup() {
             <input
               id="signup-password"
               type="password"
-              placeholder="••••••••"
+              placeholder="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
               required
+              minLength={6}
             />
           </div>
-          <button type="submit" className="btn-primary btn-full" disabled={loading}>
+          <button type="submit" className="btn-primary btn-full" disabled={loading || googleLoading}>
             {loading ? 'Processing...' : 'Sign Up'}
           </button>
         </form>
+        <div className="auth-divider"><span>or</span></div>
+        <button type="button" className="btn-secondary btn-full" onClick={handleGoogleSignup} disabled={loading || googleLoading}>
+          {googleLoading ? 'Connecting...' : 'Continue with Google'}
+        </button>
         <p className="auth-switch">
           Already have an account? <Link to="/login">Log in</Link>
         </p>

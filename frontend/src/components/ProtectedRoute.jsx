@@ -1,8 +1,9 @@
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function ProtectedRoute({ requiredRole }) {
-  const { user, loading } = useAuth();
+  const { user, firebaseUser, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -12,8 +13,12 @@ export default function ProtectedRoute({ requiredRole }) {
     );
   }
 
-  if (!user) {
-    return <Navigate to="/login" replace />;
+  if (!firebaseUser || !user) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+
+  if (!firebaseUser.emailVerified || !user.email_verified) {
+    return <Navigate to="/verify-email" replace />;
   }
 
   if (requiredRole) {

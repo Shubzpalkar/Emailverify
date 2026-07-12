@@ -1,0 +1,161 @@
+.credits-header {
+  margin-top: 1rem;
+  margin-bottom: 2rem;
+}
+
+.credits-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+}
+
+.summary-card {
+  display: flex;
+  gap: 1.25rem;
+  padding: 2rem;
+  align-items: flex-start;
+  transition: var(--transition);
+}
+
+.summary-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.summary-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+}
+
+.current-icon {
+  background-color: rgba(99, 102, 241, 0.15);
+  color: var(--primary);
+}
+
+.purchased-icon {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: var(--success);
+}
+
+.consumed-icon {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: var(--error);
+}
+
+.summary-card-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.summary-card-label {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.credits-warning-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2rem;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.section-header-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.credits-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.credits-table th {
+  background-color: rgba(255, 255, 255, 0.02);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.credits-table td {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-main);
+  vertical-align: middle;
+}
+
+.credits-table tr:last-child td {
+  border-bottom: none;
+}
+
+.credits-table tr:hover td {
+  background-color: rgba(255, 255, 255, 0.01);
+}
+
+.type-badge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.type-purchase {
+  background-color: var(--success-bg);
+  color: var(--success);
+}
+
+.type-subscription {
+  background-color: var(--primary-light);
+  color: var(--primary);
+}
+
+.type-deduction {
+  background-color: var(--error-bg);
+  color: var(--error);
+}
+
+.type-admin {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: var(--info);
+}
+
+.type-refund {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: var(--warning);
+}
+
+.credits-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+}
+
+@media (max-width: 768px) {
+  .credits-warning-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1.5rem;
+  }
+  
+  .credits-warning-card button {
+    width: 100%;
+  }
+}

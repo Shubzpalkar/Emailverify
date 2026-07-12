@@ -66,8 +66,18 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str | None = None
     SMTP_SENDER: str = "noreply@system.local"
     SMTP_USE_TLS: bool = False
+
+    # Dodo Payments Configuration
+    DODO_PAYMENTS_API_KEY: str = ""
+    DODO_WEBHOOK_KEY: str = ""
+    DODO_API_URL: str = "https://test.dodopayments.com"
+    DODO_PRODUCT_STARTER_ID: str = "prod_starter"
+    DODO_PRODUCT_GROWTH_ID: str = "prod_growth"
+    DODO_PRODUCT_10K_CREDITS_ID: str = "prod_10k"
+    DODO_PRODUCT_50K_CREDITS_ID: str = "prod_50k"
     
     class Config:
         env_file = ".env"
+
 
 settings = Settings()

@@ -25,6 +25,7 @@ logger = logging.getLogger("api_errors")
 from database import get_db, init_db
 from config import settings
 from auth import router as auth_router
+from firebase.firebase import initialize_firebase
 from worker import _flush_result_buffer
 
 async def _periodic_flush():
@@ -33,13 +34,62 @@ async def _periodic_flush():
         db = get_db()
         await _flush_result_buffer(db)
 
+def seed_superadmin_in_firebase():
+    from firebase_admin import auth as firebase_admin_auth
+    from database import get_db
+    
+    email = settings.SUPERADMIN_EMAIL
+    password = settings.SUPERADMIN_PASSWORD
+    
+    try:
+        try:
+            fb_user = firebase_admin_auth.get_user_by_email(email)
+            print(f"[BOOT] Superadmin already exists in Firebase Auth: {fb_user.uid}")
+            fb_uid = fb_user.uid
+        except firebase_admin_auth.UserNotFoundError:
+            print(f"[BOOT] Creating superadmin in Firebase Auth...")
+            fb_user = firebase_admin_auth.create_user(
+                email=email,
+                password=password,
+                email_verified=True,
+                display_name="Super Admin"
+            )
+            fb_uid = fb_user.uid
+            print(f"[BOOT] Created superadmin in Firebase Auth: {fb_uid}")
+            
+        db = get_db()
+        row = db.execute("SELECT id, firebase_uid FROM users WHERE lower(email) = lower(?)", [email]).fetchone()
+        if row:
+            db_id, current_fb_uid = row
+            if current_fb_uid != fb_uid:
+                db.execute("UPDATE users SET firebase_uid = ? WHERE id = ?", [fb_uid, db_id])
+                print(f"[BOOT] Linked superadmin in DuckDB with Firebase UID: {fb_uid}")
+        else:
+            import uuid
+            from datetime import datetime, timezone
+            from passlib.context import CryptContext
+            pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+            hashed = pwd_context.hash(password)
+            db_id = str(uuid.uuid4())
+            db.execute("""
+                INSERT INTO users (id, firebase_uid, email, password_hash, role, credit_pool, is_active, created_at, email_verified)
+                VALUES (?, ?, ?, ?, 'superadmin', 999999999, TRUE, ?, TRUE)
+            """, [db_id, fb_uid, email, hashed, datetime.now(timezone.utc)])
+            print(f"[BOOT] Created and linked superadmin in DuckDB: {fb_uid}")
+            
+    except Exception as e:
+        print(f"[BOOT] Error seeding superadmin in Firebase: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize the DuckDB database
     init_db()
     print("Database initialized")
+    initialize_firebase()
+    seed_superadmin_in_firebase()
     
     flush_task = asyncio.create_task(_periodic_flush())
+
     
     logger = logging.getLogger("verifier.startup")
     logger.info(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -74,13 +124,19 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
-from routes import router as verify_router, job_router, dashboard_router, admin_router, superadmin_router, api_keys_router
+from routes.verify import router as verify_router, job_router, dashboard_router, admin_router, superadmin_router, api_keys_router
+from routes.account import router as account_router
+from billing import router as billing_router
+
 app.include_router(verify_router)
 app.include_router(job_router)
 app.include_router(dashboard_router)
 app.include_router(admin_router)
 app.include_router(superadmin_router)
 app.include_router(api_keys_router)
+app.include_router(billing_router)
+app.include_router(account_router)
+
 
 # Healthcheck
 @app.get("/api/health")

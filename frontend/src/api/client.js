@@ -1,4 +1,6 @@
-// Centralized API client with cookie-based auth
+import { getToken } from '../firebase/auth';
+
+// Centralized API client with Firebase bearer auth
 const API_BASE = '/api';
 
 export class ApiError extends Error {
@@ -8,40 +10,58 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiCall(endpoint, options = {}) {
-  const defaultHeaders = {
+async function parseError(res) {
+  let errorMsg = 'An error occurred';
+  try {
+    const errorData = await res.json();
+    errorMsg = errorData.detail || errorMsg;
+  } catch { /* ignore */ }
+  return errorMsg;
+}
+
+function buildHeaders(options, token) {
+  const headers = {
     'Content-Type': 'application/json',
   };
 
-  // For FormData (file upload) content-type must not be forced to json
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
   if (options.body instanceof FormData) {
-    delete defaultHeaders['Content-Type'];
+    delete headers['Content-Type'];
   }
 
-  // For url-encoded data
   if (options.headers?.['Content-Type'] === 'application/x-www-form-urlencoded') {
-    delete defaultHeaders['Content-Type'];
+    delete headers['Content-Type'];
   }
 
-  const res = await fetch(`${API_BASE}${endpoint}`, {
+  return {
+    ...headers,
+    ...options.headers,
+  };
+}
+
+async function request(endpoint, options, forceRefresh = false) {
+  const token = await getToken(forceRefresh);
+  return fetch(`${API_BASE}${endpoint}`, {
     ...options,
     credentials: 'include',
-    headers: {
-      ...defaultHeaders,
-      ...options.headers,
-    },
+    headers: buildHeaders(options, token),
   });
+}
 
-  if (!res.ok) {
-    let errorMsg = 'An error occurred';
-    try {
-      const errorData = await res.json();
-      errorMsg = errorData.detail || errorMsg;
-    } catch (e) { /* ignore */ }
-    throw new ApiError(errorMsg, res.status);
+export async function apiCall(endpoint, options = {}) {
+  let res = await request(endpoint, options);
+
+  if (res.status === 401) {
+    res = await request(endpoint, options, true);
   }
 
-  // Handle empty responses
+  if (!res.ok) {
+    throw new ApiError(await parseError(res), res.status);
+  }
+
   const contentType = res.headers.get('content-type');
   if (contentType && contentType.includes('application/json')) {
     return res.json();
@@ -68,11 +88,31 @@ export const suspendUser = (userId) => apiCall(`/admin/users/${userId}/suspend`,
 export const getAdminDashboard = () => apiCall('/admin/dashboard');
 export const getMyJobs = () => apiCall('/admin/jobs');
 
-// Password Reset
-export const forgotPassword = (email) => apiCall('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
-export const resetPassword = (data) => apiCall('/auth/reset-password', { method: 'POST', body: JSON.stringify(data) });
-
 // API Keys
 export const getAPIKeys = () => apiCall('/settings/keys');
 export const createAPIKey = (name) => apiCall('/settings/keys', { method: 'POST', body: JSON.stringify({ name }) });
 export const revokeAPIKey = (keyId) => apiCall(`/settings/keys/${keyId}`, { method: 'DELETE' });
+
+// Billing API
+export const getPlans = () => apiCall('/billing/plans');
+export const getBillingDashboard = () => apiCall('/billing/dashboard');
+export const createCheckoutSession = (planName, creditsPack = null) => 
+  apiCall('/billing/create-checkout', { 
+    method: 'POST', 
+    body: JSON.stringify({ plan_name: planName, credits_pack: creditsPack }) 
+  });
+export const verifyPayment = (checkoutSessionId, paymentId = null, subscriptionId = null) => 
+  apiCall('/billing/verify-payment', { 
+    method: 'POST', 
+    body: JSON.stringify({ 
+      checkout_session_id: checkoutSessionId, 
+      dodo_payment_id: paymentId, 
+      dodo_subscription_id: subscriptionId 
+    }) 
+  });
+export const cancelSubscription = () => apiCall('/billing/cancel-subscription', { method: 'POST' });
+export const getInvoices = () => apiCall('/billing/invoices');
+export const getPaymentsHistory = () => apiCall('/billing/payments');
+export const getCreditsData = () => apiCall('/billing/credits');
+export const getCustomerPortalUrl = () => apiCall('/billing/customer-portal');
+export const getAdminBillingStats = () => apiCall('/billing/admin-stats');

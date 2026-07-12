@@ -490,12 +490,12 @@ async def sa_create_admin(data: AdminCreate, request_user: UserResponse = Depend
     db = get_db()
     if db.execute("SELECT id FROM users WHERE email = ?", [data.email]).fetchone():
         raise HTTPException(status_code=400, detail="Email already exists")
+    firebase_user = _ensure_firebase_user(str(data.email), data.password, str(data.email))
     admin_id = str(uuid.uuid4())
-    hashed = get_password_hash(data.password)
     db.execute("""
-        INSERT INTO users (id, email, password_hash, role, credit_pool, created_by, is_active)
-        VALUES (?, ?, ?, 'admin', ?, ?, TRUE)
-    """, [admin_id, data.email, hashed, data.credit_pool, request_user.id])
+        INSERT INTO users (id, firebase_uid, email, display_name, role, plan, credits, credit_pool, status, created_by, is_active, email_verified)
+        VALUES (?, ?, ?, ?, 'admin', 'Free', ?, ?, 'Active', ?, TRUE, FALSE)
+    """, [admin_id, firebase_user.uid, data.email, firebase_user.display_name, data.credit_pool, data.credit_pool, request_user.id])
     return {"message": "Admin created", "id": admin_id}
 
 @superadmin_router.patch("/admins/{admin_id}/credits")
@@ -641,14 +641,14 @@ async def a_create_user(data: UserCreate, current_user: UserResponse = Depends(r
         if current_user.credit_pool < allocated + data.initial_credits:
             raise HTTPException(400, "Not enough credits in Admin pool")
             
-    pwd = data.password or str(uuid.uuid4())
-    hashed = get_password_hash(pwd)
+    generated_password = data.password or str(uuid.uuid4())
+    firebase_user = _ensure_firebase_user(str(data.email), generated_password, str(data.email))
     u_id = str(uuid.uuid4())
     
     db.execute("""
-        INSERT INTO users (id, email, password_hash, role, tier, credit_pool, admin_id, created_by)
-        VALUES (?, ?, ?, 'user', 'standard', ?, ?, ?)
-    """, [u_id, data.email, hashed, data.initial_credits, current_user.id if current_user.role == 'admin' else None, current_user.id])
+        INSERT INTO users (id, firebase_uid, email, display_name, role, plan, credits, tier, credit_pool, admin_id, created_by, status, is_active, email_verified)
+        VALUES (?, ?, ?, ?, 'user', 'Free', ?, 'standard', ?, ?, ?, 'Active', TRUE, FALSE)
+    """, [u_id, firebase_user.uid, data.email, firebase_user.display_name, data.initial_credits, data.initial_credits, current_user.id if current_user.role == 'admin' else None, current_user.id])
     
     return {"message": "User created", "id": u_id, "password_generated": not data.password}
 

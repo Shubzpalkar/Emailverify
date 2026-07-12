@@ -1,0 +1,83 @@
+.account-layout-wrapper {
+  display: flex;
+  gap: 2rem;
+  padding-top: 2rem;
+  padding-bottom: 2rem;
+  min-height: calc(100vh - 80px);
+}
+
+.account-sidebar {
+  width: 250px;
+  flex-shrink: 0;
+  height: fit-content;
+  padding: 1.5rem 1rem;
+}
+
+.account-sidebar h3 {
+  margin-bottom: 1.5rem;
+  padding-left: 1rem;
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.account-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.account-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.account-nav-link:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.account-nav-link.active {
+  background-color: var(--primary);
+  color: white;
+}
+
+.account-nav-divider {
+  height: 1px;
+  background-color: var(--border);
+  margin: 1rem 0;
+}
+
+.danger-link {
+  color: var(--danger);
+}
+
+.danger-link:hover {
+  background-color: rgba(239, 68, 68, 0.1);
+}
+
+.danger-link.active {
+  background-color: var(--danger);
+  color: white;
+}
+
+.account-content {
+  flex-grow: 1;
+  max-width: 800px;
+}
+
+@media (max-width: 768px) {
+  .account-layout-wrapper {
+    flex-direction: column;
+  }
+  .account-sidebar {
+    width: 100%;
+  }
+}

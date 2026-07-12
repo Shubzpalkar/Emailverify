@@ -164,7 +164,9 @@ export default function Navbar() {
               <>
                 <Link to="/dashboard" className={`nav-link ${location.pathname === '/dashboard' ? 'active' : ''}`}>Dashboard</Link>
                 <Link to="/verify" className={`nav-link ${location.pathname === '/verify' ? 'active' : ''}`}>Verify</Link>
+                <Link to="/billing" className={`nav-link ${location.pathname.startsWith('/billing') || location.pathname === '/subscription' || location.pathname === '/invoices' || location.pathname === '/payment-history' || location.pathname === '/credits' ? 'active' : ''}`}>Billing</Link>
                 <Link to="/settings/keys" className={`nav-link ${location.pathname.startsWith('/settings') ? 'active' : ''}`}>API Keys</Link>
+                <Link to="/account/profile" className={`nav-link ${location.pathname.startsWith('/account') ? 'active' : ''}`}>Profile</Link>
                 {user.role === 'superadmin' && (
                   <Link to="/superadmin" className="nav-link">Superadmin</Link>
                 )}

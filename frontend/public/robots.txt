@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /superadmin
+Disallow: /dashboard
+Disallow: /verify
+Disallow: /settings/
+
+Sitemap: https://emailverif.com/sitemap.xml
