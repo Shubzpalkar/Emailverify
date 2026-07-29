@@ -1,106 +1,315 @@
 import asyncio
+import uuid
+import time
+import logging
+from typing import Tuple, Dict, Any, Optional, List
 import aiosmtplib
-from typing import Tuple, Dict
 
 from config import settings
 
-async def connect_and_check(mx_server: str, email: str, sender_email: str = "test@verifier.local") -> Tuple[int, str]:
+logger = logging.getLogger("verification_engine.smtp")
+
+# Per-domain SMTP concurrency limiters
+_domain_semaphores: Dict[str, asyncio.Semaphore] = {}
+
+def get_domain_semaphore(domain: str, max_concurrent: int = 5) -> asyncio.Semaphore:
+    domain_clean = domain.lower().strip()
+    if domain_clean not in _domain_semaphores:
+        _domain_semaphores[domain_clean] = asyncio.Semaphore(max_concurrent)
+    return _domain_semaphores[domain_clean]
+
+def map_smtp_response(code: int, message: str) -> Tuple[str, str]:
     """
-    Connect to the SMTP server and perform the handshake.
-    Returns (status_code, response_message)
+    Map SMTP response codes and error messages to structured statuses and detailed reasons.
+    Full support for 220, 221, 250, 251, 252, 421, 422, 431, 432, 450, 451, 452, 454, 500-504, 521, 530, 535, 550-554, 571.
     """
+    msg_lower = message.lower()
+
+    if code in (220, 221):
+        return "Deliverable", "Service ready or closing channel"
+    if code == 250:
+        return "Deliverable", "Mailbox exists and accepts messages"
+    if code == 251:
+        return "Deliverable", "User not local; will forward to target address"
+    if code == 252:
+        return "Catch-All", "Cannot verify mailbox directly; server accepts recipient tentatively"
+
+    # Temporary & Resource Quota Errors (4xx)
+    if code == 421:
+        return "Temporary Failure", "SMTP service unavailable or closing transmission channel"
+    if code == 422:
+        return "Mailbox Full", "Recipient mailbox full or storage quota exceeded"
+    if code == 431:
+        return "Temporary Failure", "Server out of memory or temporary resource constraint"
+    if code == 432:
+        return "Temporary Failure", "Server queue paused or suppressed"
+    if code == 450:
+        if "greylist" in msg_lower:
+            return "Greylisted", "Server greylisting active (mailbox temporarily unavailable)"
+        return "Temporary Failure", "Requested mail action not taken: mailbox busy or unavailable"
+    if code == 451:
+        if "greylist" in msg_lower:
+            return "Greylisted", "Server greylisting active (requested action aborted)"
+        return "Greylisted", "Server temporary policy restriction or greylisting"
+    if code == 452:
+        return "Mailbox Full", "Insufficient system storage or mailbox space exceeded"
+    if code == 454:
+        return "Temporary Failure", "TLS negotiation error or temporary authentication failure"
+
+    # Protocol & Handshake Command Restrictions (500-504)
+    if code in (500, 501, 502, 503, 504):
+        return "Protected", f"Server restricts interactive SMTP verification commands ({code} Command Syntax/Policy)"
+
+    # Security, Auth & Firewall Restrictions (521, 530, 535, 571)
+    if code == 521:
+        return "Protected", "Server rejects mail connections or service down"
+    if code in (530, 535):
+        return "Protected", "SMTP verification blocked: authentication required by target server"
+    if code == 571:
+        return "Protected", "Delivery unauthorized by recipient security policy"
+
+    # Permanent Failures (550, 551, 552, 553, 554)
+    if code == 550:
+        if any(term in msg_lower for term in ["spam", "block", "blackhole", "rbl", "reputation", "policy", "denied", "barracuda", "proofpoint", "mimecast"]):
+            return "Protected", "SMTP verification blocked by recipient anti-spam policy"
+        if any(term in msg_lower for term in ["disabled", "inactive", "suspended", "closed"]):
+            return "Disabled", "Recipient mailbox is disabled or suspended"
+        return "Undeliverable", "Mailbox does not exist (550 User unknown)"
+    if code == 551:
+        return "Undeliverable", "User not local; please try forwarding path"
+    if code == 552:
+        return "Mailbox Full", "Mailbox full or storage allocation exceeded"
+    if code == 553:
+        return "Undeliverable", "Requested action not taken: mailbox name invalid"
+    if code == 554:
+        return "Protected", "Transaction failed due to anti-spam policy or security reject"
+
+    # Connection & Socket Errors (Code 0)
+    if code == 0:
+        if any(term in msg_lower for term in ["refused", "reset", "closed", "connect"]):
+            return "Protected", f"Port 25 connection reset or blocked by target firewall: {message}"
+        if "timeout" in msg_lower:
+            return "Temporary Failure", f"SMTP connection timeout: {message}"
+        return "Temporary Failure", f"Network / socket connection failed: {message}"
+
+    return "Unknown", f"Inconclusive SMTP response code {code}: {message}"
+
+async def connect_and_check_transcript(
+    mx_server: str, 
+    email: str, 
+    sender_email: str = "test@verifier.local"
+) -> Tuple[int, str, Dict[str, Any]]:
+    """
+    Connect to SMTP server, execute handshake, and record full SMTP Transcript.
+    Returns (status_code, response_message, transcript_dict)
+    """
+    start_time = time.perf_counter()
+    transcript = {
+        "banner": "",
+        "ehlo": "",
+        "capabilities": [],
+        "starttls": False,
+        "auth_support": False,
+        "tls_version": "None",
+        "cipher": "None",
+        "rtt_ms": 0.0
+    }
+
     try:
         smtp = aiosmtplib.SMTP(hostname=mx_server, port=25, timeout=settings.SMTP_CONNECT_TIMEOUT)
-        await smtp.connect()
-        # Some servers require EHLO/HELO
-        await smtp.ehlo(timeout=settings.SMTP_COMMAND_TIMEOUT)
-        
-        # Test mail from
-        mail_from_response = await smtp.mail(sender_email, timeout=settings.SMTP_COMMAND_TIMEOUT)
-        if mail_from_response.code >= 400:
-            msg = mail_from_response.message.lower()
-            code = mail_from_response.code
+        connect_res = await smtp.connect()
+        transcript["banner"] = str(connect_res[1]).strip()
+
+        # EHLO Handshake
+        ehlo_code, ehlo_msg = await smtp.ehlo(timeout=settings.SMTP_COMMAND_TIMEOUT)
+        transcript["ehlo"] = f"{ehlo_code} {ehlo_msg}"
+        transcript["capabilities"] = list(smtp.esmtp_extensions.keys()) if hasattr(smtp, "esmtp_extensions") else []
+        transcript["auth_support"] = "auth" in [c.lower() for c in transcript["capabilities"]]
+
+        # STARTTLS
+        if smtp.supports_extension("STARTTLS"):
+            try:
+                await smtp.starttls(timeout=settings.SMTP_COMMAND_TIMEOUT)
+                transcript["starttls"] = True
+                await smtp.ehlo(timeout=settings.SMTP_COMMAND_TIMEOUT)
+                if hasattr(smtp, "transport") and smtp.transport:
+                    ssl_obj = smtp.transport.get_extra_info("ssl_object")
+                    if ssl_obj:
+                        transcript["tls_version"] = ssl_obj.version() or "TLSv1.2/1.3"
+                        cipher_tuple = ssl_obj.cipher()
+                        if cipher_tuple:
+                            transcript["cipher"] = cipher_tuple[0]
+            except Exception as tls_err:
+                logger.debug(f"STARTTLS negotiation failed for {mx_server}: {tls_err}")
+
+        # MAIL FROM
+        mail_from_res = await smtp.mail(sender_email, timeout=settings.SMTP_COMMAND_TIMEOUT)
+        if mail_from_res.code >= 400:
+            msg = mail_from_res.message.lower()
+            code = mail_from_res.code
+            try:
+                await smtp.quit(timeout=settings.SMTP_COMMAND_TIMEOUT)
+            except Exception:
+                pass
+            rtt = (time.perf_counter() - start_time) * 1000.0
+            transcript["rtt_ms"] = round(rtt, 2)
+            return code, f"error on MAIL FROM: {msg}", transcript
+
+        # RCPT TO
+        rcpt_to_res = await smtp.rcpt(email, timeout=settings.SMTP_COMMAND_TIMEOUT)
+        try:
             await smtp.quit(timeout=settings.SMTP_COMMAND_TIMEOUT)
-            return code, f"error on MAIL FROM: {msg}"
-            
-        # Test rcpt to
-        rcpt_to_response = await smtp.rcpt(email, timeout=settings.SMTP_COMMAND_TIMEOUT)
-        await smtp.quit(timeout=settings.SMTP_COMMAND_TIMEOUT)
-        
-        return rcpt_to_response.code, rcpt_to_response.message.lower()
+        except Exception:
+            pass
+
+        rtt = (time.perf_counter() - start_time) * 1000.0
+        transcript["rtt_ms"] = round(rtt, 2)
+        return rcpt_to_res.code, rcpt_to_res.message, transcript
+
+    except aiosmtplib.SMTPResponseException as e:
+        rtt = (time.perf_counter() - start_time) * 1000.0
+        transcript["rtt_ms"] = round(rtt, 2)
+        return e.code, e.message, transcript
+    except aiosmtplib.SMTPConnectTimeoutError:
+        rtt = (time.perf_counter() - start_time) * 1000.0
+        transcript["rtt_ms"] = round(rtt, 2)
+        return 0, "SMTP connection timed out", transcript
+    except aiosmtplib.SMTPTimeoutError:
+        rtt = (time.perf_counter() - start_time) * 1000.0
+        transcript["rtt_ms"] = round(rtt, 2)
+        return 0, "SMTP command timed out", transcript
     except aiosmtplib.SMTPException as e:
-        return 0, f"smtp exception: {str(e)}"
+        rtt = (time.perf_counter() - start_time) * 1000.0
+        transcript["rtt_ms"] = round(rtt, 2)
+        return 0, f"SMTP exception: {str(e)}", transcript
+    except (ConnectionResetError, ConnectionRefusedError, TimeoutError, OSError) as e:
+        rtt = (time.perf_counter() - start_time) * 1000.0
+        transcript["rtt_ms"] = round(rtt, 2)
+        return 0, f"Socket error: {str(e)}", transcript
     except Exception as e:
-        # Connection timeouts, DNS errors, etc.
-        return 0, f"connection failed: {str(e)}"
+        rtt = (time.perf_counter() - start_time) * 1000.0
+        transcript["rtt_ms"] = round(rtt, 2)
+        return 0, f"Connection failed: {str(e)}", transcript
 
-async def _verify_smtp_inner(mx_server: str, email: str, sender_email: str = "test@verifier.local") -> Dict[str, str]:
+async def connect_and_check(mx_server: str, email: str, sender_email: str = "test@verifier.local") -> Tuple[int, str, bool]:
     """
-    Verify email via SMTP with retry logic for temporary errors.
-    Returns a dictionary with status and reason.
+    Backward compatible helper returning (status_code, message, tls_used).
     """
-    delays = settings.RETRY_DELAYS
-    
-    for attempt in range(len(delays) + 1): # Max 4 attempts (1 initial + 3 retries)
-        code, msg = await connect_and_check(mx_server, email, sender_email)
-        
-        # Interpret response
-        if code == 250:
-            return {"status": "valid", "reason": "smtp_valid"}
-        
-        if code == 550:
-            # 550 can sometimes be a block, but per requirements we mostly treat it as invalid unless explicitly noted.
-            if "spamhaus" in msg or "blocked" in msg:
-                return {"status": "unknown", "reason": "blocked_by_provider"}
-            return {"status": "invalid", "reason": "user_not_found"}
-        
-        # 421 Service not available, closing transmission channel
-        # 450 Requested mail action not taken: mailbox unavailable (e.g., mail queue full, greylisting)
-        if code in (421, 450) or "greylist" in msg or "too many connections" in msg:
-            if attempt < len(delays):
+    code, msg, transcript = await connect_and_check_transcript(mx_server, email, sender_email)
+    return code, msg, transcript.get("starttls", False)
+
+async def _verify_smtp_inner(mx_server: str, email: str, sender_email: str = "test@verifier.local") -> Dict[str, Any]:
+    """
+    Verify email via SMTP with exponential backoff retries for temporary errors.
+    Returns structured result dictionary including full SMTP transcript telemetry.
+    """
+    delays = settings.RETRY_DELAYS  # e.g. [1, 2, 4]
+    domain = email.split('@')[1] if '@' in email else "generic"
+    sem = get_domain_semaphore(domain, max_concurrent=5)
+
+    last_code = 0
+    last_msg = ""
+    last_transcript = {}
+
+    non_retryable_codes = {220, 221, 250, 251, 252, 500, 501, 502, 503, 504, 521, 530, 535, 550, 551, 553, 554, 571}
+
+    async with sem:
+        for attempt in range(len(delays) + 1):
+            code, msg, transcript = await connect_and_check_transcript(mx_server, email, sender_email)
+            last_code = code
+            last_msg = msg
+            last_transcript = transcript
+
+            status, reason = map_smtp_response(code, msg)
+
+            # Permanent failure or success -> return immediately without retrying
+            if code in non_retryable_codes or status in ("Deliverable", "Undeliverable", "Protected", "Disabled", "Catch-All"):
+                return {
+                    "status": status,
+                    "smtp_code": code,
+                    "reason": reason,
+                    "raw_message": msg,
+                    "tls_used": transcript.get("starttls", False),
+                    "retry_attempts": attempt,
+                    "smtp_transcript": transcript
+                }
+
+            # Check if retryable (421, 422, 431, 432, 450, 451, 452, 454 or connection timeouts)
+            is_retryable = code in (421, 422, 431, 432, 450, 451, 452, 454) or code == 0 or status in ("Greylisted", "Temporary Failure")
+            if is_retryable and attempt < len(delays):
                 delay = delays[attempt]
-                print(f"[SMTP Retry] {email} got {code} ({msg}). Retrying in {delay}s...")
+                logger.info(f"[SMTP Retry {attempt+1}/{len(delays)}] {email} on {mx_server} got code {code} ({reason}). Retrying in {delay}s...")
                 await asyncio.sleep(delay)
                 continue
             else:
-                return {"status": "unknown", "reason": "temporary_error_timeout"}
-        
-        # Connection errors (code 0) or timeouts - might be worth retrying if it's transient, 
-        # but let's just attempt retries on actual SMTP codes that imply greylisting/rate limits.
-        # However, connection refused/timeouts could mean they block connections.
-        if code == 0:
-            if attempt < len(delays):
-                delay = delays[attempt]
-                await asyncio.sleep(delay)
-                continue
-            else:
-                return {"status": "unknown", "reason": f"connection_failed: {msg}"}
-        
-        # Any other code
-        return {"status": "unknown", "reason": f"unhandled_smtp_response_{code}"}
-        
-    return {"status": "unknown", "reason": "max_retries_exceeded"}
+                break
 
-async def verify_smtp_with_retries(mx_server: str, email: str, sender_email: str = "test@verifier.local") -> Dict[str, str]:
+    status, reason = map_smtp_response(last_code, last_msg)
+    return {
+        "status": status,
+        "smtp_code": last_code,
+        "reason": reason,
+        "raw_message": last_msg,
+        "tls_used": last_transcript.get("starttls", False),
+        "retry_attempts": min(attempt, len(delays)),
+        "smtp_transcript": last_transcript
+    }
+
+async def verify_smtp_with_retries(mx_server: str, email: str, sender_email: str = "test@verifier.local") -> Dict[str, Any]:
+    """
+    Outer wrapper with hard timeout enforcement.
+    Returns structured dictionary with backward compatible 'status' and 'reason'.
+    """
     try:
-        return await asyncio.wait_for(
+        res = await asyncio.wait_for(
             _verify_smtp_inner(mx_server, email, sender_email),
             timeout=settings.SMTP_HARD_TIMEOUT
         )
+        return res
     except asyncio.TimeoutError:
         return {
-            "status": "unknown",
-            "score": 0.1,
-            "reason": "hard_timeout"
+            "status": "Temporary Failure",
+            "smtp_code": 408,
+            "reason": "SMTP hard timeout limit exceeded",
+            "raw_message": "Hard timeout",
+            "tls_used": False,
+            "retry_attempts": 0,
+            "smtp_transcript": {"banner": "", "ehlo": "", "capabilities": [], "starttls": False, "rtt_ms": 0.0}
+        }
+
+async def check_catch_all_detailed(mx_server: str, domain: str) -> Dict[str, Any]:
+    """
+    Performs dual-probe catch-all verification using two distinct non-existent addresses.
+    If both probes return code 250, domain is confirmed Catch-All.
+    """
+    probe1 = f"bounce-probe1-{uuid.uuid4().hex[:8]}@{domain}"
+    probe2 = f"bounce-probe2-{uuid.uuid4().hex[:8]}@{domain}"
+
+    code1, msg1, _ = await connect_and_check(mx_server, probe1)
+    if code1 != 250:
+        return {
+            "is_catch_all": False,
+            "confidence": 0.95,
+            "reason": f"First probe rejected with code {code1}"
+        }
+
+    code2, msg2, _ = await connect_and_check(mx_server, probe2)
+    if code2 == 250:
+        return {
+            "is_catch_all": True,
+            "confidence": 0.90,
+            "reason": "Both random probe emails accepted by target MX server (Catch-All domain)"
+        }
+    else:
+        return {
+            "is_catch_all": False,
+            "confidence": 0.85,
+            "reason": f"Second probe rejected with code {code2}"
         }
 
 async def check_catch_all(mx_server: str, domain: str) -> bool:
     """
-    Checks if the domain is a catch-all by sending an email to a random address.
+    Checks if the domain is a catch-all for backward compatibility.
     """
-    import uuid
-    random_local = f"bounce-{uuid.uuid4().hex[:10]}"
-    random_email = f"{random_local}@{domain}"
-    
-    code, _ = await connect_and_check(mx_server, random_email)
-    return code == 250
+    res = await check_catch_all_detailed(mx_server, domain)
+    return res["is_catch_all"]

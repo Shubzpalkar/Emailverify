@@ -39,7 +39,7 @@ async def verify_firebase_token(
         )
 
     try:
-        decoded = firebase_admin_auth.verify_id_token(token, check_revoked=True)
+        decoded = firebase_admin_auth.verify_id_token(token, check_revoked=True, clock_skew_seconds=60)
     except firebase_admin_auth.RevokedIdTokenError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been revoked")
     except firebase_admin_auth.ExpiredIdTokenError:

@@ -148,6 +148,19 @@ async def get_job_results_stats(job_id: str, current_user: UserResponse = Depend
     
     return {row[0]: row[1] for row in stats}
 
+@job_router.post("/{job_id}/cancel")
+async def cancel_job(job_id: str, current_user: UserResponse = Depends(get_current_user)):
+    db = get_db()
+    job = _get_job_with_auth(db, job_id, current_user)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    from worker import cancel_running_job
+    cancel_running_job(job_id)
+
+    db.execute("UPDATE verification_jobs SET status = 'cancelled', completed_at = CURRENT_TIMESTAMP WHERE id = ?", [job_id])
+    return {"status": "cancelled", "message": "Job cancelled successfully"}
+
 # --- DOWNLOAD ROUTES & HELPERS ---
 
 ALL_EXPORT_COLUMNS = ["email", "status", "domain", "is_role", "is_disposable", "smtp_result", "created_at"]
@@ -416,14 +429,16 @@ async def get_dashboard_metrics(current_user: UserResponse = Depends(get_current
         for s in all_statuses:
             counts.setdefault(s, 0)
 
+        actual_processed = max(j[3], sum(counts.values()))
+
         jobs_list.append({
             "id": j[0],
             "file_name": j[1],
             "total_emails": j[2],
-            "processed_emails": j[3],
+            "processed_emails": actual_processed,
             "status": j[4],
             "created_at": j[5],
-            "progress_percentage": round(j[3] / j[2] * 100, 2) if j[2] > 0 else 0,
+            "progress_percentage": round(actual_processed / j[2] * 100, 2) if j[2] > 0 else 0,
             "counts": counts
         })
         

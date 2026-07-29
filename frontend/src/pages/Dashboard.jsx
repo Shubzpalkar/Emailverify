@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Coins, EnvelopeSimple, ArrowCircleDown } from '@phosphor-icons/react';
+import { Coins, EnvelopeSimple, ArrowCircleDown, StopCircle } from '@phosphor-icons/react';
 import { apiCall } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
@@ -32,6 +32,16 @@ export default function Dashboard() {
     }
   };
 
+  const handleCancelJob = async (jobId) => {
+    try {
+      await apiCall(`/jobs/${jobId}/cancel`, { method: 'POST' });
+      showToast('Job cancelled successfully', 'success');
+      loadDashboard();
+    } catch (err) {
+      showToast(err.message || 'Failed to cancel job', 'error');
+    }
+  };
+
   useEffect(() => {
     loadDashboard();
     return () => {
@@ -42,6 +52,7 @@ export default function Dashboard() {
   const getStatusColor = (status) => {
     if (status === 'completed') return 'var(--success)';
     if (status === 'failed') return 'var(--error)';
+    if (status === 'cancelled') return '#ef4444';
     return 'var(--primary)';
   };
 
@@ -134,8 +145,41 @@ export default function Dashboard() {
                         >
                           <ArrowCircleDown size={20} />
                         </button>
+                      ) : (job.status === 'processing' || job.status === 'pending') ? (
+                        <button
+                          title="Stop verification job"
+                          onClick={() => handleCancelJob(job.id)}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '4px 10px',
+                            fontSize: '0.75rem',
+                            borderRadius: '6px',
+                            background: 'rgba(239, 68, 68, 0.15)',
+                            color: '#ef4444',
+                            border: '1px solid rgba(239, 68, 68, 0.4)',
+                            cursor: 'pointer',
+                            fontWeight: '600'
+                          }}
+                        >
+                          <StopCircle size={16} weight="fill" />
+                          Stop
+                        </button>
+                      ) : job.processed_emails > 0 ? (
+                        <button
+                          className="btn-icon"
+                          title={`Download partial results (${job.processed_emails.toLocaleString()} verified)`}
+                          onClick={() => setDownloadJob(job)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
+                        >
+                          <ArrowCircleDown size={20} />
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Download</span>
+                        </button>
                       ) : (
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Processing...</span>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                          {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
+                        </span>
                       )}
                     </td>
                   </tr>

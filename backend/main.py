@@ -20,6 +20,9 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 
+logging.getLogger("watchfiles").setLevel(logging.WARNING)
+logging.getLogger("watchfiles.main").setLevel(logging.WARNING)
+
 logger = logging.getLogger("api_errors")
 
 from database import get_db, init_db
@@ -80,6 +83,18 @@ def seed_superadmin_in_firebase():
     except Exception as e:
         print(f"[BOOT] Error seeding superadmin in Firebase: {e}")
 
+def cleanup_stuck_jobs():
+    try:
+        db = get_db()
+        db.execute("""
+            UPDATE verification_jobs 
+            SET status = 'cancelled', completed_at = CURRENT_TIMESTAMP 
+            WHERE status IN ('processing', 'pending')
+        """)
+        print("[BOOT] Cleared orphaned / interrupted jobs from database")
+    except Exception as e:
+        print(f"[BOOT] Warning during orphan job cleanup: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize the DuckDB database
@@ -87,6 +102,7 @@ async def lifespan(app: FastAPI):
     print("Database initialized")
     initialize_firebase()
     seed_superadmin_in_firebase()
+    cleanup_stuck_jobs()
     
     flush_task = asyncio.create_task(_periodic_flush())
 

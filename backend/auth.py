@@ -106,29 +106,45 @@ def sync_firebase_user(firebase_user: FirebaseUser) -> UserResponse:
 
     if existing:
         user_id = existing[0]
-        try:
-            db.execute("""
-                UPDATE users
-                SET firebase_uid = COALESCE(firebase_uid, ?),
-                    display_name = COALESCE(?, display_name),
-                    last_login = ?,
-                    email_verified = ?,
-                    status = CASE WHEN is_active THEN 'Active' ELSE 'Suspended' END
-                WHERE id = ?
-            """, [
-                firebase_user.firebase_uid,
-                firebase_user.display_name,
-                now,
-                firebase_user.email_verified,
-                user_id,
-            ])
-        except Exception as e:
-            print(f"[AUTH WARNING] Failed to update firebase_uid due to DuckDB constraint bug: {e}. Falling back to non-unique fields.", flush=True)
+        current_fb_uid = existing[1]
+
+        if current_fb_uid is None:
+            try:
+                db.execute("""
+                    UPDATE users
+                    SET firebase_uid = ?,
+                        display_name = COALESCE(?, display_name),
+                        last_login = ?,
+                        email_verified = ?,
+                        status = CASE WHEN is_active THEN 'Active' ELSE 'Suspended' END
+                    WHERE id = ?
+                """, [
+                    firebase_user.firebase_uid,
+                    firebase_user.display_name,
+                    now,
+                    firebase_user.email_verified,
+                    user_id,
+                ])
+            except Exception as e:
+                db.execute("""
+                    UPDATE users
+                    SET display_name = COALESCE(?, display_name),
+                        last_login = ?,
+                        email_verified = ?
+                    WHERE id = ?
+                """, [
+                    firebase_user.display_name,
+                    now,
+                    firebase_user.email_verified,
+                    user_id,
+                ])
+        else:
             db.execute("""
                 UPDATE users
                 SET display_name = COALESCE(?, display_name),
                     last_login = ?,
-                    email_verified = ?
+                    email_verified = ?,
+                    status = CASE WHEN is_active THEN 'Active' ELSE 'Suspended' END
                 WHERE id = ?
             """, [
                 firebase_user.display_name,

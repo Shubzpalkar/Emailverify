@@ -52,8 +52,24 @@ async def _staggered_gather(email_list: list, verify_fn, delay_secs: float) -> l
     return await asyncio.gather(*tasks, return_exceptions=True)
 
 _global_semaphore = asyncio.Semaphore(settings.GLOBAL_MAX_CONCURRENT)
+_active_job_tasks: dict[str, asyncio.Task] = {}
+_cancelled_job_ids: set[str] = set()
+
+def cancel_running_job(job_id: str) -> bool:
+    """Mark job as cancelled and terminate running asyncio task if active."""
+    _cancelled_job_ids.add(job_id)
+    if job_id in _active_job_tasks:
+        task = _active_job_tasks[job_id]
+        if not task.done():
+            task.cancel()
+        return True
+    return False
 
 async def background_worker(job_id: str, email_list: List[str]):
+    current_task = asyncio.current_task()
+    if current_task:
+        _active_job_tasks[job_id] = current_task
+
     try:
         db = get_db()
         # Update status to processing
@@ -166,10 +182,14 @@ async def background_worker(job_id: str, email_list: List[str]):
             smtp_info = res.get('smtp_result', '')
             logger.info(f"[Job {job_id}] {icon} {email} → {status.upper()} ({smtp_info})")
             
-            if processed_count % 50 == 0 or processed_count == total:
+            if processed_count % 10 == 0 or processed_count == total:
                 pct = round(processed_count / total * 100, 1)
                 logger.info(f"[Job {job_id}] 📈 Progress: {processed_count:,}/{total:,} ({pct}%)")
-            
+                try:
+                    db.execute("UPDATE verification_jobs SET processed_emails = ? WHERE id = ?", [processed_count, job_id])
+                except Exception:
+                    pass
+
             await _buffer_result({
                 "id": str(uuid.uuid4()),
                 "job_id": job_id,
@@ -181,27 +201,25 @@ async def background_worker(job_id: str, email_list: List[str]):
                 "smtp_result": res.get('smtp_result')
             }, db)
             
-            # Note: We batch process updating the job processed_emails count to simplify DB writes
             return res
 
         # Staggered launch loop instead of gathering all instantly
         results = await _staggered_gather(emails_to_verify, bounded_process, job_delay)
         
-        # Increment remaining progress that wasn't covered by cache logic
-        db.execute("""
-        UPDATE verification_jobs 
-        SET processed_emails = processed_emails + ? 
-        WHERE id = ?
-        """, [len(emails_to_verify), job_id])
-        
+        # Flush DB output buffer unconditionally at job conclusion
+        await _flush_result_buffer(db)
+
+        # Set final accurate processed emails count from actual results table
+        cnt_row = db.execute("SELECT COUNT(*) FROM verification_results WHERE job_id = ?", [job_id]).fetchone()
+        final_processed = cnt_row[0] if cnt_row else processed_count
+
+        db.execute("UPDATE verification_jobs SET processed_emails = ? WHERE id = ?", [final_processed, job_id])
+
         # Deduct credits from user_id upon completion
         db.execute(
             "UPDATE users SET credit_pool = GREATEST(0, credit_pool - ?) WHERE id = (SELECT user_id FROM verification_jobs WHERE id = ?)",
             [total, job_id]
         )
-        
-        # Flush DB output buffer unconditionally at job conclusion
-        await _flush_result_buffer(db)
 
         # Job complete - log summary
         db.execute("UPDATE verification_jobs SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?", [job_id])
@@ -226,7 +244,19 @@ async def background_worker(job_id: str, email_list: List[str]):
         summary_parts = [f"{status}: {count}" for status, count in sorted(stats.items())]
         logger.info(f"[Job {job_id}] 🎉 Job completed! Results: {', '.join(summary_parts)}")
         
+    except asyncio.CancelledError:
+        logger.info(f"[Job {job_id}] 🛑 Job cancelled")
+        db = get_db()
+        await _flush_result_buffer(db)
+        cnt_row = db.execute("SELECT COUNT(*) FROM verification_results WHERE job_id = ?", [job_id]).fetchone()
+        actual_cnt = cnt_row[0] if cnt_row else 0
+        db.execute("UPDATE verification_jobs SET status = 'cancelled', processed_emails = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?", [actual_cnt, job_id])
     except Exception as e:
         logger.error(f"[Job {job_id}] failed: {e}")
         db = get_db()
-        db.execute("UPDATE verification_jobs SET status = 'failed' WHERE id = ?", [job_id])
+        cnt_row = db.execute("SELECT COUNT(*) FROM verification_results WHERE job_id = ?", [job_id]).fetchone()
+        actual_cnt = cnt_row[0] if cnt_row else 0
+        db.execute("UPDATE verification_jobs SET status = 'failed', processed_emails = ? WHERE id = ?", [actual_cnt, job_id])
+    finally:
+        _active_job_tasks.pop(job_id, None)
+        _cancelled_job_ids.discard(job_id)

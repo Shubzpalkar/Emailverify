@@ -76,33 +76,45 @@ export default function DownloadModal({ job, onClose }) {
     );
   };
 
-  const handleDownload = (format) => {
+  const handleDownload = async (format) => {
     if (!selectedStatuses.length || !selectedColumns.length) return;
 
     setIsDownloading(true);
     setDownloadFormat(format);
 
-    const params = new URLSearchParams();
-    if (selectedStatuses.length < 7) {
-      params.set("statuses", selectedStatuses.join(","));
-    }
-    if (selectedColumns.length < 7) {
-      params.set("columns", selectedColumns.join(","));
-    }
+    try {
+      const params = new URLSearchParams();
+      if (selectedStatuses.length < 7) {
+        params.set("statuses", selectedStatuses.join(","));
+      }
+      if (selectedColumns.length < 7) {
+        params.set("columns", selectedColumns.join(","));
+      }
 
-    const url = `/api/jobs/${job.id || job.job_id}/download/${format}?${params.toString()}`;
+      const res = await apiCall(`/jobs/${job.id || job.job_id}/download/${format}?${params.toString()}`);
+      const blob = await res.blob();
 
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      let filename = `${(job.file_name || job.filename || "emails").replace(/\.[^/.]+$/, "")}_verified.${format}`;
+      const disposition = res.headers.get("content-disposition");
+      if (disposition && disposition.includes("filename=")) {
+        const match = disposition.match(/filename="?([^"]+)"?/);
+        if (match && match[1]) filename = match[1];
+      }
 
-    setTimeout(() => {
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      console.error("Failed to download file", err);
+    } finally {
       setIsDownloading(false);
       setDownloadFormat(null);
-    }, 2000);
+    }
   };
 
   return (
