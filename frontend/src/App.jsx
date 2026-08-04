@@ -1,5 +1,7 @@
+import { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
+import { applyTheme, getSavedTheme } from './utils/theme';
 import { PermissionProvider } from './context/PermissionContext';
 import Navbar from './components/Navbar';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -11,6 +13,8 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import VerifyEmail from './pages/VerifyEmail';
 import Dashboard from './pages/Dashboard';
+import History from './pages/History';
+import Analytics from './pages/Analytics';
 import APIKeys from './pages/APIKeys';
 import Verify from './pages/Verify';
 import Admin from './pages/Admin';
@@ -49,6 +53,10 @@ function GuestRoute({ children }) {
 }
 
 export default function App() {
+  useEffect(() => {
+    applyTheme(getSavedTheme());
+  }, []);
+
   return (
     <PermissionProvider>
       <Navbar />
@@ -67,8 +75,10 @@ export default function App() {
           {/* Protected routes */}
           <Route element={<ProtectedRoute />}>
             <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/settings/keys" element={<APIKeys />} />
             <Route path="/verify" element={<Verify />} />
+            <Route path="/history" element={<History />} />
+            <Route path="/analytics" element={<Analytics />} />
+            <Route path="/settings/keys" element={<APIKeys />} />
             <Route path="/billing" element={<Billing />} />
             <Route path="/subscription" element={<Subscription />} />
             <Route path="/invoices" element={<Invoices />} />

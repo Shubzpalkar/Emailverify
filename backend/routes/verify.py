@@ -90,12 +90,16 @@ async def upload_list(background_tasks: BackgroundTasks, file: UploadFile = File
     # Do NOT deduct credits here, worker.py now handles the deduction on completion, as instructed.
     
     job_id = str(uuid.uuid4())
+    ws_id = current_user.workspace_id
     db.execute("""
-    INSERT INTO verification_jobs (id, user_id, file_name, total_emails) 
-    VALUES (?, ?, ?, ?)
-    """, [job_id, current_user.id, file.filename, len(emails)])
+    INSERT INTO verification_jobs (id, user_id, workspace_id, file_name, total_emails) 
+    VALUES (?, ?, ?, ?, ?)
+    """, [job_id, current_user.id, ws_id, file.filename, len(emails)])
     
-    db.execute("INSERT INTO credits_log (id, user_id, credits_used, job_id) VALUES (?, ?, ?, ?)", [str(uuid.uuid4()), current_user.id, len(emails), job_id])
+    db.execute("""
+    INSERT INTO credits_log (id, user_id, workspace_id, credits_used, job_id)
+    VALUES (?, ?, ?, ?, ?)
+    """, [str(uuid.uuid4()), current_user.id, ws_id, len(emails), job_id])
     
     background_tasks.add_task(background_worker, job_id, emails)
     

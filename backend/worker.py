@@ -215,14 +215,33 @@ async def background_worker(job_id: str, email_list: List[str]):
 
         db.execute("UPDATE verification_jobs SET processed_emails = ? WHERE id = ?", [final_processed, job_id])
 
-        # Deduct credits from user_id upon completion
-        db.execute(
-            "UPDATE users SET credit_pool = GREATEST(0, credit_pool - ?) WHERE id = (SELECT user_id FROM verification_jobs WHERE id = ?)",
-            [total, job_id]
-        )
+        # Set job status completed and recorded credits used
+        db.execute("""
+            UPDATE verification_jobs 
+            SET status = 'completed', 
+                credits_used = ?,
+                completed_at = CURRENT_TIMESTAMP 
+            WHERE id = ?
+        """, [total, job_id])
 
-        # Job complete - log summary
-        db.execute("UPDATE verification_jobs SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?", [job_id])
+        # Deduct credits from workspace and user upon completion
+        j_row = db.execute("SELECT user_id, workspace_id FROM verification_jobs WHERE id = ?", [job_id]).fetchone()
+        if j_row:
+            u_id, w_id = j_row[0], j_row[1]
+            db.execute("""
+                UPDATE users
+                SET credit_pool = GREATEST(0, COALESCE(credit_pool, 0) - ?),
+                    credits = GREATEST(0, COALESCE(credits, 0) - ?)
+                WHERE id = ?
+            """, [total, total, u_id])
+
+            if w_id:
+                db.execute("""
+                    UPDATE workspaces
+                    SET credits_remaining = GREATEST(0, COALESCE(credits_remaining, 0) - ?),
+                        credits_used = COALESCE(credits_used, 0) + ?
+                    WHERE id = ?
+                """, [total, total, w_id])
         
         try:
             user_row = db.execute(

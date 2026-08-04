@@ -106,28 +106,65 @@ def init_db():
     );
     """)
     
+    # Migrations for verification_jobs history enhancements
+    job_cols_to_add = [
+        ("stage", "VARCHAR DEFAULT 'Queued'"),
+        ("file_size", "INTEGER DEFAULT 0"),
+        ("deliverable_count", "INTEGER DEFAULT 0"),
+        ("protected_count", "INTEGER DEFAULT 0"),
+        ("catch_all_count", "INTEGER DEFAULT 0"),
+        ("invalid_count", "INTEGER DEFAULT 0"),
+        ("unknown_count", "INTEGER DEFAULT 0"),
+        ("disposable_count", "INTEGER DEFAULT 0"),
+        ("role_count", "INTEGER DEFAULT 0"),
+        ("duplicate_count", "INTEGER DEFAULT 0"),
+        ("credits_used", "INTEGER DEFAULT 0"),
+        ("processing_time_ms", "INTEGER DEFAULT 0"),
+        ("error_code", "VARCHAR"),
+        ("failure_reason", "VARCHAR"),
+        ("suggested_resolution", "VARCHAR"),
+        ("is_archived", "BOOLEAN DEFAULT FALSE"),
+        ("is_deleted", "BOOLEAN DEFAULT FALSE"),
+        ("started_at", "TIMESTAMP"),
+        ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    ]
+    for col_name, col_def in job_cols_to_add:
+        try:
+            db.execute(f"ALTER TABLE verification_jobs ADD COLUMN {col_name} {col_def}")
+        except Exception:
+            pass
+
     db.execute("""
-    CREATE TABLE IF NOT EXISTS verification_results (
+    CREATE TABLE IF NOT EXISTS job_events (
         id VARCHAR PRIMARY KEY,
         job_id VARCHAR NOT NULL,
-        email VARCHAR NOT NULL,
-        domain VARCHAR,
-        status VARCHAR,
-        is_role BOOLEAN,
-        is_disposable BOOLEAN,
-        smtp_result VARCHAR,
+        event_type VARCHAR NOT NULL,
+        description VARCHAR,
+        actor_id VARCHAR,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
-    
+
     db.execute("""
-    CREATE TABLE IF NOT EXISTS credits_log (
+    CREATE TABLE IF NOT EXISTS job_downloads (
         id VARCHAR PRIMARY KEY,
+        job_id VARCHAR NOT NULL,
         user_id VARCHAR NOT NULL,
-        credits_used INTEGER,
-        job_id VARCHAR,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        workspace_id VARCHAR
+        format VARCHAR NOT NULL,
+        records_count INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    db.execute("""
+    CREATE TABLE IF NOT EXISTS job_logs (
+        id VARCHAR PRIMARY KEY,
+        job_id VARCHAR NOT NULL,
+        log_level VARCHAR DEFAULT 'INFO',
+        category VARCHAR,
+        message VARCHAR NOT NULL,
+        details VARCHAR,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
 
@@ -569,5 +606,41 @@ def init_db():
         db.execute("UPDATE users SET role_id = 'role_companyadmin' WHERE role = 'admin' AND role_id IS NULL")
         db.execute("UPDATE users SET role_id = 'role_teammember' WHERE role = 'user' AND role_id IS NULL")
         db.execute("UPDATE users SET joined_at = created_at WHERE joined_at IS NULL")
-    except Exception:
-        pass
+        
+        # Backfill workspace_id on verification_jobs and credits_log if NULL
+        db.execute("""
+            UPDATE verification_jobs 
+            SET workspace_id = (SELECT u.workspace_id FROM users u WHERE u.id = verification_jobs.user_id)
+            WHERE workspace_id IS NULL
+        """)
+        db.execute("""
+            UPDATE credits_log 
+            SET workspace_id = (SELECT u.workspace_id FROM users u WHERE u.id = credits_log.user_id)
+            WHERE workspace_id IS NULL
+        """)
+        
+        # Sync credits_used on completed verification_jobs
+        db.execute("UPDATE verification_jobs SET credits_used = total_emails WHERE (credits_used IS NULL OR credits_used = 0) AND status = 'completed'")
+        
+        # Recalculate workspace credit pools
+        ws_rows = db.execute("SELECT id FROM workspaces").fetchall()
+        for (ws_id,) in ws_rows:
+            used = db.execute("SELECT COALESCE(SUM(total_emails), 0) FROM verification_jobs WHERE workspace_id = ? AND status = 'completed'", [ws_id]).fetchone()[0] or 0
+            if used > 0:
+                rem = max(0, 100 - used)
+                db.execute("UPDATE workspaces SET credits_used = ?, credits_remaining = ? WHERE id = ?", [used, rem, ws_id])
+                
+        # Recalculate user credit pools
+        u_rows = db.execute("SELECT id, workspace_id FROM users WHERE role != 'superadmin'").fetchall()
+        for u_id, u_ws_id in u_rows:
+            if u_ws_id:
+                ws_cred = db.execute("SELECT credits_remaining FROM workspaces WHERE id = ?", [u_ws_id]).fetchone()
+                if ws_cred:
+                    db.execute("UPDATE users SET credit_pool = ?, credits = ? WHERE id = ?", [ws_cred[0], ws_cred[0], u_id])
+            else:
+                used = db.execute("SELECT COALESCE(SUM(total_emails), 0) FROM verification_jobs WHERE user_id = ? AND status = 'completed'", [u_id]).fetchone()[0] or 0
+                if used > 0:
+                    rem = max(0, 100 - used)
+                    db.execute("UPDATE users SET credit_pool = ?, credits = ? WHERE id = ?", [rem, rem, u_id])
+    except Exception as e:
+        print(f"[BOOT] Credit sync notice: {e}")

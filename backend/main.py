@@ -146,6 +146,9 @@ from routes.verify import router as verify_router, job_router, dashboard_router,
 from routes.account import router as account_router
 from routes.workspace import router as workspace_router
 from routes.profile import router as profile_router
+from routes.dashboard import router as modular_dashboard_router
+from routes.history import router as history_router
+from routes.analytics import router as analytics_router
 from billing import router as billing_router
 from routes import members
 
@@ -160,6 +163,9 @@ app.include_router(billing_router)
 app.include_router(account_router)
 app.include_router(workspace_router)
 app.include_router(profile_router)
+app.include_router(modular_dashboard_router)
+app.include_router(history_router)
+app.include_router(analytics_router)
 
 uploads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 os.makedirs(uploads_dir, exist_ok=True)

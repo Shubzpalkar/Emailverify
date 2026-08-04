@@ -14,6 +14,7 @@ import {
   FileCsv, FileXls, Code, Key, Sparkle, LockKey, Lock, ShieldWarning,
   Sun, Moon, Laptop, Trash
 } from '@phosphor-icons/react';
+import { applyTheme } from '../utils/theme';
 import './Profile.css';
 
 const TIMEZONES = [
@@ -88,8 +89,9 @@ export default function Profile() {
       }
 
       if (data.preferences) {
+        const themeVal = data.preferences.theme || 'system';
         setPreferencesForm({
-          theme: data.preferences.theme || 'system',
+          theme: themeVal,
           email_notifications: data.preferences.email_notifications ?? true,
           notify_verification_completed: data.preferences.notify_verification_completed ?? true,
           notify_credit_alerts: data.preferences.notify_credit_alerts ?? true,
@@ -98,6 +100,7 @@ export default function Profile() {
           download_preference: data.preferences.download_preference || 'CSV',
           verification_preference: data.preferences.verification_preference || 'standard'
         });
+        applyTheme(themeVal);
       }
 
       // Fetch sessions and history
@@ -172,6 +175,11 @@ export default function Profile() {
     }
   };
 
+  const handleThemeSelect = (newTheme) => {
+    setPreferencesForm(prev => ({ ...prev, theme: newTheme }));
+    applyTheme(newTheme);
+  };
+
   const handlePreferencesSubmit = async (e) => {
     e.preventDefault();
     setSavingPreferences(true);
@@ -179,15 +187,7 @@ export default function Profile() {
       const updated = await updatePreferences(preferencesForm);
       showToast('Preferences updated successfully');
       setProfileData(prev => prev ? { ...prev, preferences: updated } : prev);
-
-      // Apply theme preference to document if applicable
-      if (preferencesForm.theme === 'dark') {
-        document.documentElement.setAttribute('data-theme', 'dark');
-      } else if (preferencesForm.theme === 'light') {
-        document.documentElement.setAttribute('data-theme', 'light');
-      } else {
-        document.documentElement.removeAttribute('data-theme');
-      }
+      applyTheme(preferencesForm.theme);
     } catch (err) {
       showToast(err.message || 'Failed to update preferences', 'error');
     } finally {
@@ -479,21 +479,21 @@ export default function Profile() {
               <button
                 type="button"
                 className={`segmented-btn ${preferencesForm.theme === 'light' ? 'active' : ''}`}
-                onClick={() => setPreferencesForm({ ...preferencesForm, theme: 'light' })}
+                onClick={() => handleThemeSelect('light')}
               >
                 <Sun size={16} /> Light
               </button>
               <button
                 type="button"
                 className={`segmented-btn ${preferencesForm.theme === 'dark' ? 'active' : ''}`}
-                onClick={() => setPreferencesForm({ ...preferencesForm, theme: 'dark' })}
+                onClick={() => handleThemeSelect('dark')}
               >
                 <Moon size={16} /> Dark
               </button>
               <button
                 type="button"
                 className={`segmented-btn ${preferencesForm.theme === 'system' ? 'active' : ''}`}
-                onClick={() => setPreferencesForm({ ...preferencesForm, theme: 'system' })}
+                onClick={() => handleThemeSelect('system')}
               >
                 <Laptop size={16} /> System
               </button>

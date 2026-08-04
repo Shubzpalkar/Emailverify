@@ -184,3 +184,48 @@ export const getSessions = () => apiCall('/profile/sessions');
 export const revokeSession = (sessionId) => apiCall(`/profile/sessions/${sessionId}`, { method: 'DELETE' });
 export const getLoginHistory = () => apiCall('/profile/login-history');
 export const recordPasswordChange = () => apiCall('/profile/change-password', { method: 'POST' });
+
+// Modular Dashboard Widgets API
+export const getDashboardWelcome = () => apiCall('/dashboard/welcome');
+export const getDashboardKpi = () => apiCall('/dashboard/kpi');
+export const getDashboardCredits = () => apiCall('/dashboard/credits');
+export const getDashboardVerificationSummary = () => apiCall('/dashboard/verification-summary');
+export const getDashboardJobs = () => apiCall('/dashboard/jobs');
+export const getDashboardAnalytics = (timeframe = 'daily') => apiCall(`/dashboard/analytics?timeframe=${timeframe}`);
+export const getDashboardActivity = () => apiCall('/dashboard/activity');
+export const getDashboardWorkspaceActivity = () => apiCall('/dashboard/workspace-activity');
+export const getDashboardNotifications = () => apiCall('/dashboard/notifications');
+export const getDashboardSystemHealth = () => apiCall('/dashboard/system-health');
+export const getDashboardWorkspaceSummary = () => apiCall('/dashboard/workspace');
+
+// Verification History API
+export const getVerificationJobsSummary = () => apiCall('/verification/jobs/summary');
+export const getVerificationJobs = (params = {}) => {
+  const query = new URLSearchParams(params).toString();
+  return apiCall(`/verification/jobs?${query}`);
+};
+export const getJobDetails = (id) => apiCall(`/verification/jobs/${id}`);
+export const getJobTimeline = (id) => apiCall(`/verification/jobs/${id}/timeline`);
+export const getJobStatistics = (id) => apiCall(`/verification/jobs/${id}/statistics`);
+export const getJobDiagnostics = (id) => apiCall(`/verification/jobs/${id}/diagnostics`);
+export const getJobDownloads = (id) => apiCall(`/verification/jobs/${id}/downloads`);
+export const retryJob = (id) => apiCall(`/verification/jobs/${id}/retry`, { method: 'POST' });
+export const archiveJob = (id) => apiCall(`/verification/jobs/${id}/archive`, { method: 'POST' });
+export const deleteJob = (id) => apiCall(`/verification/jobs/${id}`, { method: 'DELETE' });
+export const bulkJobAction = (action, jobIds) => apiCall('/verification/jobs/bulk', { method: 'POST', body: JSON.stringify({ action, job_ids: jobIds }) });
+
+// Enterprise Analytics API
+export const getAnalyticsOverview = (timeframe = '30days') => apiCall(`/analytics/overview?timeframe=${timeframe}`);
+export const getAnalyticsTrends = (timeframe = '30days') => apiCall(`/analytics/trends?timeframe=${timeframe}`);
+export const getAnalyticsBreakdown = (timeframe = '30days') => apiCall(`/analytics/breakdown?timeframe=${timeframe}`);
+export const getAnalyticsDomain = (timeframe = '30days') => apiCall(`/analytics/domain?timeframe=${timeframe}`);
+export const getAnalyticsProvider = (timeframe = '30days') => apiCall(`/analytics/provider?timeframe=${timeframe}`);
+export const getAnalyticsCredits = (timeframe = '30days') => apiCall(`/analytics/credits?timeframe=${timeframe}`);
+export const getAnalyticsTeam = () => apiCall('/analytics/team');
+export const getAnalyticsPerformance = () => apiCall('/analytics/performance');
+export const getAnalyticsFiles = () => apiCall('/analytics/files');
+export const compareAnalyticsJobs = (jobA, jobB) => apiCall(`/analytics/comparison?job_a=${jobA}&job_b=${jobB}`);
+export const getAnalyticsHeatmaps = () => apiCall('/analytics/heatmaps');
+export const getAnalyticsWorkspace = () => apiCall('/analytics/workspace');
+export const getAnalyticsSystem = () => apiCall('/analytics/system');
+export const exportAnalyticsReport = (format = 'csv', timeframe = '30days') => apiCall(`/analytics/export?format=${format}&timeframe=${timeframe}`);

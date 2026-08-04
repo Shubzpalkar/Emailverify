@@ -24,11 +24,27 @@ const COLUMN_CONFIG = [
 ];
 
 export default function DownloadModal({ job, onClose }) {
-  const [selectedStatuses, setSelectedStatuses] = useState(
-    Object.entries(job.counts || {})
-      .filter(([_, count]) => count > 0)
-      .map(([status]) => status)
-  );
+  const jobId = job?.id || job?.job_id;
+
+  const [counts, setCounts] = useState(() => {
+    const raw = job?.counts || {};
+    return {
+      valid: raw.valid ?? raw.deliverable ?? job?.deliverable ?? job?.deliverable_count ?? 0,
+      invalid: raw.invalid ?? job?.invalid ?? job?.invalid_count ?? 0,
+      risky: raw.risky ?? raw.protected ?? job?.protected ?? job?.protected_count ?? 0,
+      catch_all: raw.catch_all ?? job?.catch_all ?? job?.catch_all_count ?? 0,
+      disposable: raw.disposable ?? job?.disposable ?? job?.disposable_count ?? 0,
+      role_based: raw.role_based ?? raw.role ?? job?.role ?? job?.role_count ?? 0,
+      unknown: raw.unknown ?? job?.unknown ?? job?.unknown_count ?? 0
+    };
+  });
+
+  const [selectedStatuses, setSelectedStatuses] = useState(() => {
+    const active = Object.entries(counts)
+      .filter(([_, cnt]) => cnt > 0)
+      .map(([k]) => k);
+    return active.length > 0 ? active : STATUS_CONFIG.map(s => s.key);
+  });
 
   const [selectedColumns, setSelectedColumns] = useState(
     ["email", "status", "domain", "created_at"]
@@ -38,6 +54,35 @@ export default function DownloadModal({ job, onClose }) {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadFormat, setDownloadFormat] = useState(null);
 
+  // Fetch actual status breakdown from backend
+  useEffect(() => {
+    let isMounted = true;
+    async function loadBreakdown() {
+      if (!jobId) return;
+      try {
+        const res = await apiCall(`/jobs/${jobId}/download/count`);
+        if (isMounted && res.by_status) {
+          setCounts(res.by_status);
+          const activeKeys = Object.entries(res.by_status)
+            .filter(([_, cnt]) => cnt > 0)
+            .map(([k]) => k);
+          if (activeKeys.length > 0) {
+            setSelectedStatuses(activeKeys);
+          } else {
+            setSelectedStatuses(STATUS_CONFIG.map(s => s.key));
+          }
+          setRowCount(res.total);
+        }
+      } catch (err) {
+        console.error("Failed to load download counts", err);
+      }
+    }
+    loadBreakdown();
+
+    return () => { isMounted = false; };
+  }, [jobId]);
+
+  // Recalculate rowCount when status selections change
   useEffect(() => {
     let isMounted = true;
     const fetchCount = async () => {
@@ -49,35 +94,35 @@ export default function DownloadModal({ job, onClose }) {
       try {
         const params = new URLSearchParams();
         params.set("statuses", selectedStatuses.join(","));
-        const res = await apiCall(`/jobs/${job.id || job.job_id}/download/count?${params.toString()}`);
+        const res = await apiCall(`/jobs/${jobId}/download/count?${params.toString()}`);
         if (isMounted) setRowCount(res.total);
       } catch (err) {
         console.error("Failed to fetch count", err);
       }
     };
 
-    const timer = setTimeout(fetchCount, 300);
+    const timer = setTimeout(fetchCount, 250);
     return () => {
       isMounted = false;
       clearTimeout(timer);
     };
-  }, [selectedStatuses, job.id, job.job_id]);
+  }, [selectedStatuses, jobId]);
 
   const toggleStatus = (key) => {
-    setSelectedStatuses(prev => 
+    setSelectedStatuses(prev =>
       prev.includes(key) ? prev.filter(s => s !== key) : [...prev, key]
     );
   };
 
   const toggleColumn = (key) => {
     if (key === 'email') return; // Email is mandatory
-    setSelectedColumns(prev => 
+    setSelectedColumns(prev =>
       prev.includes(key) ? prev.filter(c => c !== key) : [...prev, key]
     );
   };
 
   const handleDownload = async (format) => {
-    if (!selectedStatuses.length || !selectedColumns.length) return;
+    if (!selectedStatuses.length || !selectedColumns.length || !jobId) return;
 
     setIsDownloading(true);
     setDownloadFormat(format);
@@ -91,10 +136,10 @@ export default function DownloadModal({ job, onClose }) {
         params.set("columns", selectedColumns.join(","));
       }
 
-      const res = await apiCall(`/jobs/${job.id || job.job_id}/download/${format}?${params.toString()}`);
+      const res = await apiCall(`/jobs/${jobId}/download/${format}?${params.toString()}`);
       const blob = await res.blob();
 
-      let filename = `${(job.file_name || job.filename || "emails").replace(/\.[^/.]+$/, "")}_verified.${format}`;
+      let filename = `${(job?.file_name || job?.filename || "emails").replace(/\.[^/.]+$/, "")}_verified.${format}`;
       const disposition = res.headers.get("content-disposition");
       if (disposition && disposition.includes("filename=")) {
         const match = disposition.match(/filename="?([^"]+)"?/);
@@ -126,20 +171,20 @@ export default function DownloadModal({ job, onClose }) {
             <X size={20} />
           </button>
         </div>
-        <p className="modal-filename">{job.file_name || job.filename}</p>
+        <p className="modal-filename">{job?.file_name || job?.filename}</p>
 
         <section>
           <h4 className="section-title">Filter by status</h4>
           <div className="chips-wrap">
             {STATUS_CONFIG.map(({ key, label, color }) => {
-              const count = job.counts?.[key] || 0;
+              const count = counts[key] ?? 0;
               const isSelected = selectedStatuses.includes(key);
               return (
                 <button
                   key={key}
                   className={`status-chip ${isSelected ? 'selected' : ''} ${count === 0 ? 'empty' : ''}`}
                   style={{ '--chip-color': color }}
-                  onClick={() => count > 0 && toggleStatus(key)}
+                  onClick={() => toggleStatus(key)}
                   disabled={count === 0}
                 >
                   <span className="chip-dot" />
