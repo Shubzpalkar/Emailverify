@@ -45,7 +45,8 @@ function buildHeaders(options, token) {
 async function request(endpoint, options, forceRefresh = false) {
   const token = await getToken(forceRefresh);
   const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), 10000); // 10s timeout
+  const timeoutMs = options.timeout || 30000;
+  const id = setTimeout(() => controller.abort(new Error('Request timed out')), timeoutMs);
 
   try {
     const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -58,6 +59,9 @@ async function request(endpoint, options, forceRefresh = false) {
     return response;
   } catch (error) {
     clearTimeout(id);
+    if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+      throw new ApiError('Request timed out. Please check your connection and try again.', 408);
+    }
     throw error;
   }
 }
@@ -133,6 +137,22 @@ export const getWorkspace = () => apiCall('/workspace');
 export const updateWorkspace = (data) => apiCall('/workspace', { method: 'PUT', body: JSON.stringify(data) });
 export const getWorkspaceSettings = () => apiCall('/workspace/settings');
 export const updateWorkspaceSettings = (data) => apiCall('/workspace/settings', { method: 'PUT', body: JSON.stringify(data) });
+export const getFullWorkspaceSettings = () => apiCall('/workspace/full-settings');
+export const updateWorkspaceGeneral = (data) => apiCall('/workspace/general', { method: 'PUT', body: JSON.stringify(data) });
+export const uploadWorkspaceLogo = (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiCall('/workspace/branding/logo', { method: 'POST', body: formData });
+};
+export const updateWorkspaceBranding = (data) => apiCall('/workspace/branding', { method: 'PUT', body: JSON.stringify(data) });
+export const updateWorkspaceVerificationSettings = (data) => apiCall('/workspace/verification-settings', { method: 'PUT', body: JSON.stringify(data) });
+export const updateWorkspaceNotificationSettings = (data) => apiCall('/workspace/notification-settings', { method: 'PUT', body: JSON.stringify(data) });
+export const updateWorkspaceSecuritySettings = (data) => apiCall('/workspace/security-settings', { method: 'PUT', body: JSON.stringify(data) });
+export const forceLogoutWorkspaceUsers = () => apiCall('/workspace/force-logout-all', { method: 'POST' });
+export const getWorkspaceTeamSummary = () => apiCall('/workspace/team-summary');
+export const getWorkspaceCreditSummary = () => apiCall('/workspace/credit-summary');
+export const getWorkspaceAuditSummary = () => apiCall('/workspace/audit-summary');
+export const deleteWorkspaceDanger = (data) => apiCall('/workspace/delete-danger', { method: 'DELETE', body: JSON.stringify(data) });
 
 // Team Members API
 export const getTeamMembers = (params) => {
@@ -149,3 +169,18 @@ export const resendInvite = (id) => apiCall(`/members/resend/${id}`, { method: '
 export const cancelInvite = (id) => apiCall(`/members/invite/${id}`, { method: 'DELETE' });
 export const validateInvite = (token) => apiCall(`/members/invite/validate/${token}`);
 export const acceptInvite = (token, data) => apiCall(`/members/invite/${token}/accept`, { method: 'POST', body: JSON.stringify(data) });
+
+// User Profile API
+export const getProfile = () => apiCall('/profile');
+export const updateProfile = (data) => apiCall('/profile', { method: 'PUT', body: JSON.stringify(data) });
+export const uploadAvatar = (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiCall('/profile/avatar', { method: 'POST', body: formData });
+};
+export const getPreferences = () => apiCall('/profile/preferences');
+export const updatePreferences = (data) => apiCall('/profile/preferences', { method: 'PUT', body: JSON.stringify(data) });
+export const getSessions = () => apiCall('/profile/sessions');
+export const revokeSession = (sessionId) => apiCall(`/profile/sessions/${sessionId}`, { method: 'DELETE' });
+export const getLoginHistory = () => apiCall('/profile/login-history');
+export const recordPasswordChange = () => apiCall('/profile/change-password', { method: 'POST' });

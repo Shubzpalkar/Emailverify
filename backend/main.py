@@ -139,10 +139,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi.staticfiles import StaticFiles
+
 app.include_router(auth_router)
 from routes.verify import router as verify_router, job_router, dashboard_router, admin_router, superadmin_router, api_keys_router
 from routes.account import router as account_router
 from routes.workspace import router as workspace_router
+from routes.profile import router as profile_router
 from billing import router as billing_router
 from routes import members
 
@@ -156,6 +159,11 @@ app.include_router(members.router)
 app.include_router(billing_router)
 app.include_router(account_router)
 app.include_router(workspace_router)
+app.include_router(profile_router)
+
+uploads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+os.makedirs(uploads_dir, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 
 # Healthcheck

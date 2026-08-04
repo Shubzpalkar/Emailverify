@@ -120,6 +120,8 @@ def sync_firebase_user(firebase_user: FirebaseUser) -> UserResponse:
             """, [workspace_id, firebase_user.display_name or "My Workspace", slug, user_id])
             db.execute("UPDATE users SET workspace_id = ? WHERE id = ?", [workspace_id, user_id])
 
+        is_verified = firebase_user.email_verified or (existing and existing[4] == "superadmin")
+
         if current_fb_uid is None:
             try:
                 db.execute("""
@@ -134,7 +136,7 @@ def sync_firebase_user(firebase_user: FirebaseUser) -> UserResponse:
                     firebase_user.firebase_uid,
                     firebase_user.display_name,
                     now,
-                    firebase_user.email_verified,
+                    is_verified,
                     user_id,
                 ])
             except Exception as e:
@@ -147,7 +149,7 @@ def sync_firebase_user(firebase_user: FirebaseUser) -> UserResponse:
                 """, [
                     firebase_user.display_name,
                     now,
-                    firebase_user.email_verified,
+                    is_verified,
                     user_id,
                 ])
         else:
@@ -161,7 +163,7 @@ def sync_firebase_user(firebase_user: FirebaseUser) -> UserResponse:
             """, [
                 firebase_user.display_name,
                 now,
-                firebase_user.email_verified,
+                is_verified,
                 user_id,
             ])
 
@@ -205,7 +207,7 @@ async def get_current_user(firebase_user: FirebaseUser = Depends(verify_firebase
     user = sync_firebase_user(firebase_user)
     if not user.is_active or user.status.lower() != "active":
         raise HTTPException(status_code=403, detail="Account suspended")
-    if not user.email_verified:
+    if not user.email_verified and user.role != "superadmin":
         raise HTTPException(status_code=403, detail="Email not verified")
     return user
 

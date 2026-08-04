@@ -344,6 +344,77 @@ def init_db():
             pass
 
 
+    db.execute("""
+    CREATE TABLE IF NOT EXISTS user_preferences (
+        user_id VARCHAR PRIMARY KEY,
+        theme VARCHAR DEFAULT 'system',
+        email_notifications BOOLEAN DEFAULT TRUE,
+        notify_verification_completed BOOLEAN DEFAULT TRUE,
+        notify_credit_alerts BOOLEAN DEFAULT TRUE,
+        notify_team_invites BOOLEAN DEFAULT TRUE,
+        notify_security_alerts BOOLEAN DEFAULT TRUE,
+        download_preference VARCHAR DEFAULT 'CSV',
+        verification_preference VARCHAR DEFAULT 'standard',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    db.execute("""
+    CREATE TABLE IF NOT EXISTS user_sessions (
+        id VARCHAR PRIMARY KEY,
+        user_id VARCHAR NOT NULL,
+        session_token VARCHAR,
+        browser VARCHAR,
+        device VARCHAR,
+        ip_address VARCHAR,
+        location VARCHAR DEFAULT 'Unknown',
+        login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        is_current BOOLEAN DEFAULT FALSE
+    );
+    """)
+
+    db.execute("""
+    CREATE TABLE IF NOT EXISTS login_history (
+        id VARCHAR PRIMARY KEY,
+        user_id VARCHAR NOT NULL,
+        login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        browser VARCHAR,
+        device VARCHAR,
+        ip_address VARCHAR,
+        location VARCHAR DEFAULT 'Unknown',
+        status VARCHAR DEFAULT 'Success'
+    );
+    """)
+
+    db.execute("""
+    CREATE TABLE IF NOT EXISTS workspace_verification_settings (
+        workspace_id VARCHAR PRIMARY KEY,
+        verification_mode VARCHAR DEFAULT 'standard',
+        download_format VARCHAR DEFAULT 'CSV',
+        duplicate_handling VARCHAR DEFAULT 'remove',
+        catch_all_handling VARCHAR DEFAULT 'include',
+        role_account_handling VARCHAR DEFAULT 'include',
+        disposable_handling VARCHAR DEFAULT 'exclude',
+        confidence_threshold INTEGER DEFAULT 70,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    db.execute("""
+    CREATE TABLE IF NOT EXISTS workspace_notification_settings (
+        workspace_id VARCHAR PRIMARY KEY,
+        notify_verification_completed BOOLEAN DEFAULT TRUE,
+        notify_credits_low BOOLEAN DEFAULT TRUE,
+        notify_team_invitations BOOLEAN DEFAULT TRUE,
+        notify_security_alerts BOOLEAN DEFAULT TRUE,
+        notify_weekly_reports BOOLEAN DEFAULT FALSE,
+        notify_monthly_reports BOOLEAN DEFAULT TRUE,
+        notify_api_usage_alerts BOOLEAN DEFAULT TRUE,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
     # Migrations
     try:
         db.execute("ALTER TABLE users ADD COLUMN tier VARCHAR DEFAULT 'standard'")
@@ -383,7 +454,24 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_api_keys_workspace ON api_keys(workspace_id)",
         "CREATE INDEX IF NOT EXISTS idx_credits_workspace ON credits_log(workspace_id)",
         "ALTER TABLE users ADD COLUMN role_id VARCHAR DEFAULT NULL",
-        "ALTER TABLE users ADD COLUMN joined_at TIMESTAMP DEFAULT NULL"
+        "ALTER TABLE users ADD COLUMN joined_at TIMESTAMP DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN job_title VARCHAR DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN employee_id VARCHAR DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN timezone VARCHAR DEFAULT 'UTC'",
+        "ALTER TABLE users ADD COLUMN language VARCHAR DEFAULT 'en'",
+        "ALTER TABLE users ADD COLUMN avatar_url VARCHAR DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN password_last_changed TIMESTAMP DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE workspaces ADD COLUMN workspace_name VARCHAR DEFAULT NULL",
+        "ALTER TABLE workspaces ADD COLUMN brand_color VARCHAR DEFAULT '#3b82f6'",
+        "ALTER TABLE workspaces ADD COLUMN workspace_logo VARCHAR DEFAULT NULL",
+        "ALTER TABLE workspaces ADD COLUMN favicon_url VARCHAR DEFAULT NULL",
+        "ALTER TABLE workspaces ADD COLUMN email_logo VARCHAR DEFAULT NULL",
+        "ALTER TABLE workspaces ADD COLUMN low_credit_threshold INTEGER DEFAULT 1000",
+        "ALTER TABLE workspaces ADD COLUMN require_email_verification BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE workspaces ADD COLUMN allow_google_login BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE workspaces ADD COLUMN session_timeout VARCHAR DEFAULT '24h'",
+        "ALTER TABLE workspaces ADD COLUMN last_security_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
     ]
     for sql in migrations:
         try:

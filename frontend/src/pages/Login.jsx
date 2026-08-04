@@ -13,8 +13,12 @@ export default function Login() {
   const { showToast } = useToast();
   const navigate = useNavigate();
 
-  const routeAfterLogin = (firebaseUser) => {
-    if (!firebaseUser?.emailVerified) {
+  const routeAfterLogin = (firebaseUser, user) => {
+    if (user?.role === 'superadmin') {
+      navigate('/superadmin', { replace: true });
+      return;
+    }
+    if (!firebaseUser?.emailVerified && user?.role !== 'superadmin') {
       navigate('/verify-email', { replace: true });
       return;
     }
@@ -25,11 +29,15 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     try {
-      const { firebaseUser } = await login(email, password);
+      const { firebaseUser, user } = await login(email, password);
       showToast('Welcome back!');
-      routeAfterLogin(firebaseUser);
+      routeAfterLogin(firebaseUser, user);
     } catch (err) {
-      showToast(err.message || 'Login failed', 'error');
+      let msg = err.message || 'Login failed';
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential' || msg.includes('invalid-credential')) {
+        msg = 'Invalid credentials or account not found in Firebase Auth. If logging in as superadmin, please Sign Up with superadmin@system.local first.';
+      }
+      showToast(msg, 'error');
     } finally {
       setLoading(false);
     }
