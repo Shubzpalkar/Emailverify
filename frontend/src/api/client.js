@@ -44,11 +44,22 @@ function buildHeaders(options, token) {
 
 async function request(endpoint, options, forceRefresh = false) {
   const token = await getToken(forceRefresh);
-  return fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    credentials: 'include',
-    headers: buildHeaders(options, token),
-  });
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+  try {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      credentials: 'include',
+      headers: buildHeaders(options, token),
+      signal: controller.signal
+    });
+    clearTimeout(id);
+    return response;
+  } catch (error) {
+    clearTimeout(id);
+    throw error;
+  }
 }
 
 export async function apiCall(endpoint, options = {}) {
@@ -116,3 +127,25 @@ export const getPaymentsHistory = () => apiCall('/billing/payments');
 export const getCreditsData = () => apiCall('/billing/credits');
 export const getCustomerPortalUrl = () => apiCall('/billing/customer-portal');
 export const getAdminBillingStats = () => apiCall('/billing/admin-stats');
+
+// Workspace API
+export const getWorkspace = () => apiCall('/workspace');
+export const updateWorkspace = (data) => apiCall('/workspace', { method: 'PUT', body: JSON.stringify(data) });
+export const getWorkspaceSettings = () => apiCall('/workspace/settings');
+export const updateWorkspaceSettings = (data) => apiCall('/workspace/settings', { method: 'PUT', body: JSON.stringify(data) });
+
+// Team Members API
+export const getTeamMembers = (params) => {
+  const query = new URLSearchParams(params).toString();
+  return apiCall(`/members?${query}`);
+};
+export const addTeamMember = (data) => apiCall('/members', { method: 'POST', body: JSON.stringify(data) });
+export const updateTeamMember = (id, data) => apiCall(`/members/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const removeTeamMember = (id) => apiCall(`/members/${id}`, { method: 'DELETE' });
+
+// Invitation API
+export const inviteTeamMember = (data) => apiCall('/members/invite', { method: 'POST', body: JSON.stringify(data) });
+export const resendInvite = (id) => apiCall(`/members/resend/${id}`, { method: 'POST' });
+export const cancelInvite = (id) => apiCall(`/members/invite/${id}`, { method: 'DELETE' });
+export const validateInvite = (token) => apiCall(`/members/invite/validate/${token}`);
+export const acceptInvite = (token, data) => apiCall(`/members/invite/${token}/accept`, { method: 'POST', body: JSON.stringify(data) });

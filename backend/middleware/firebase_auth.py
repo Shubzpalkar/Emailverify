@@ -6,6 +6,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from firebase_admin import auth as firebase_admin_auth
 
 from firebase.firebase import initialize_firebase
+from starlette.concurrency import run_in_threadpool
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -39,7 +40,12 @@ async def verify_firebase_token(
         )
 
     try:
-        decoded = firebase_admin_auth.verify_id_token(token, check_revoked=True, clock_skew_seconds=60)
+        decoded = await run_in_threadpool(
+            firebase_admin_auth.verify_id_token,
+            token,
+            check_revoked=False,
+            clock_skew_seconds=60
+        )
     except firebase_admin_auth.RevokedIdTokenError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been revoked")
     except firebase_admin_auth.ExpiredIdTokenError:

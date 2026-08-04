@@ -14,6 +14,7 @@ from auth import (
     get_current_user, UserResponse, require_superadmin, require_admin, require_user, 
     get_password_hash, create_access_token, get_api_user
 )
+from middleware.rbac import require_permission
 from config import settings
 from engine import verify_single_email
 from database import get_db, get_db_write_lock
@@ -31,7 +32,7 @@ class VerifyRequest(BaseModel):
     email: str
 
 @router.post("")
-async def verify_email_api(req: VerifyRequest, current_user: UserResponse = Depends(get_current_user)):
+async def verify_email_api(req: VerifyRequest, current_user: UserResponse = Depends(require_permission("verification.single"))):
     if not current_user.is_active:
         raise HTTPException(status_code=403, detail="Account suspended")
     db = get_db()
@@ -46,7 +47,7 @@ async def verify_email_api(req: VerifyRequest, current_user: UserResponse = Depe
     return result
 
 @job_router.post("/upload")
-async def upload_list(background_tasks: BackgroundTasks, file: UploadFile = File(...), current_user: UserResponse = Depends(get_current_user)):
+async def upload_list(background_tasks: BackgroundTasks, file: UploadFile = File(...), current_user: UserResponse = Depends(require_permission("verification.bulk"))):
     if not current_user.is_active:
         raise HTTPException(status_code=403, detail="Account suspended")
         
@@ -114,7 +115,7 @@ def _get_job_with_auth(db, job_id: str, user: UserResponse):
     return job
 
 @job_router.get("/{job_id}")
-async def get_job_status(job_id: str, current_user: UserResponse = Depends(get_current_user)):
+async def get_job_status(job_id: str, current_user: UserResponse = Depends(require_permission("verification.history"))):
     db = get_db()
     job = _get_job_with_auth(db, job_id, current_user)
     
@@ -133,7 +134,7 @@ async def get_job_status(job_id: str, current_user: UserResponse = Depends(get_c
     }
 
 @job_router.get("/{job_id}/results")
-async def get_job_results_stats(job_id: str, current_user: UserResponse = Depends(get_current_user)):
+async def get_job_results_stats(job_id: str, current_user: UserResponse = Depends(require_permission("verification.history"))):
     db = get_db()
     job = _get_job_with_auth(db, job_id, current_user)
     if not job:
@@ -149,7 +150,7 @@ async def get_job_results_stats(job_id: str, current_user: UserResponse = Depend
     return {row[0]: row[1] for row in stats}
 
 @job_router.post("/{job_id}/cancel")
-async def cancel_job(job_id: str, current_user: UserResponse = Depends(get_current_user)):
+async def cancel_job(job_id: str, current_user: UserResponse = Depends(require_permission("verification.bulk"))):
     db = get_db()
     job = _get_job_with_auth(db, job_id, current_user)
     if not job:
@@ -247,7 +248,7 @@ def _fetch_chunk(db, job_id: str, columns: list, status_filter: Optional[list],
 async def download_count(
     job_id: str,
     statuses: Optional[str] = Query(None),
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: UserResponse = Depends(require_permission("verification.download")),
     db = Depends(get_db)
 ):
     _verify_job_ownership(job_id, current_user, db)
@@ -280,7 +281,7 @@ async def download_csv(
     job_id: str,
     statuses: Optional[str] = Query(None),
     columns: Optional[str] = Query(None),
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: UserResponse = Depends(require_permission("verification.download")),
     db = Depends(get_db)
 ):
     _verify_job_ownership(job_id, current_user, db)
@@ -330,7 +331,7 @@ async def download_xlsx(
     job_id: str,
     statuses: Optional[str] = Query(None),
     columns: Optional[str] = Query(None),
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: UserResponse = Depends(require_permission("verification.download")),
     db = Depends(get_db)
 ):
     _verify_job_ownership(job_id, current_user, db)
@@ -407,7 +408,7 @@ async def download_xlsx(
     )
 
 @dashboard_router.get("/metrics")
-async def get_dashboard_metrics(current_user: UserResponse = Depends(get_current_user)):
+async def get_dashboard_metrics(current_user: UserResponse = Depends(require_permission("dashboard.view"))):
     db = get_db()
     jobs = db.execute("SELECT id, file_name, total_emails, processed_emails, status, created_at FROM verification_jobs WHERE user_id = ? ORDER BY created_at DESC LIMIT 10", [current_user.id]).fetchall()
     
@@ -732,7 +733,7 @@ class APIKeyCreate(BaseModel):
     name: str
 
 @api_keys_router.post("/")
-async def create_key(data: APIKeyCreate, current_user: UserResponse = Depends(require_user)):
+async def create_key(data: APIKeyCreate, current_user: UserResponse = Depends(require_permission("api.create"))):
     db = get_db()
     # Limit to 5 keys per user for now
     existing_count = db.execute("SELECT COUNT(*) FROM api_keys WHERE user_id = ?", [current_user.id]).fetchone()[0]
@@ -753,7 +754,7 @@ async def create_key(data: APIKeyCreate, current_user: UserResponse = Depends(re
     return {"id": key_id, "name": data.name, "key": raw_key}
 
 @api_keys_router.get("/")
-async def list_keys(current_user: UserResponse = Depends(require_user)):
+async def list_keys(current_user: UserResponse = Depends(require_permission("api.view"))):
     db = get_db()
     keys = db.execute("""
         SELECT id, name, prefix, created_at, last_used FROM api_keys WHERE user_id = ?
@@ -771,7 +772,7 @@ async def list_keys(current_user: UserResponse = Depends(require_user)):
     ]
 
 @api_keys_router.delete("/{key_id}")
-async def delete_key(key_id: str, current_user: UserResponse = Depends(require_user)):
+async def delete_key(key_id: str, current_user: UserResponse = Depends(require_permission("api.revoke"))):
     db = get_db()
     db.execute("DELETE FROM api_keys WHERE id = ? AND user_id = ?", [key_id, current_user.id])
     return {"message": "API key revoked successfully"}

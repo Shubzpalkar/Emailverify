@@ -53,6 +53,28 @@ class EmailService:
         return False
 
     @classmethod
+    async def sendInvitationEmail(cls, to_email: str, inviter_name: str, workspace_name: str, invite_url: str):
+        subject = f"You've been invited to join {workspace_name} on EmailVerif"
+        html_content = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                <h2>You've been invited!</h2>
+                <p>Hello,</p>
+                <p><strong>{inviter_name}</strong> has invited you to join their workspace <strong>{workspace_name}</strong> on EmailVerif.</p>
+                <p>To accept the invitation and create your account, click the button below:</p>
+                <p>
+                    <a href="{invite_url}" style="display: inline-block; padding: 10px 20px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px;">Accept Invitation</a>
+                </p>
+                <p>Or copy and paste this link into your browser:</p>
+                <p><a href="{invite_url}">{invite_url}</a></p>
+                <p>This invitation will expire in 7 days.</p>
+                <p>Best regards,<br>The EmailVerif Team</p>
+            </body>
+        </html>
+        """
+        return await cls.send_email(to_email, subject, html_content)
+
+    @classmethod
     async def sendWelcomeEmail(cls, to_email: str):
         subject = "Welcome to EmailVerif!"
         html_content = f"""
@@ -149,6 +171,33 @@ class EmailService:
                     </div>
                     <br>
                     <p>Best regards,<br>The EmailVerif Team</p>
+                </div>
+            </body>
+        </html>
+        """
+        return await cls.send_email(to_email, subject, html_content)
+
+    @classmethod
+    async def sendPasswordResetEmail(cls, to_email: str, reset_link: str):
+        subject = "Reset your EmailVerif password"
+        html_content = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background-color: #f8fafc; padding: 20px; border-radius: 8px; text-align: center;">
+                    <h2 style="color: #1e293b; margin-top: 0;">Password Reset Request</h2>
+                    <p>We received a request to reset your password for your EmailVerif account.</p>
+                    <p>Click the button below to choose a new password:</p>
+                    
+                    <div style="margin: 30px 0;">
+                        <a href="{reset_link}" style="background-color: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Reset Password</a>
+                    </div>
+                    
+                    <p style="font-size: 0.9em; color: #64748b;">If you didn't request this, you can safely ignore this email. Your password will not change.</p>
+                    <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+                    <p style="font-size: 0.8em; color: #94a3b8; word-break: break-all;">
+                        If the button doesn't work, copy and paste this link into your browser:<br>
+                        <a href="{reset_link}" style="color: #6366f1;">{reset_link}</a>
+                    </p>
                 </div>
             </body>
         </html>

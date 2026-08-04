@@ -142,7 +142,9 @@ app.add_middleware(
 app.include_router(auth_router)
 from routes.verify import router as verify_router, job_router, dashboard_router, admin_router, superadmin_router, api_keys_router
 from routes.account import router as account_router
+from routes.workspace import router as workspace_router
 from billing import router as billing_router
+from routes import members
 
 app.include_router(verify_router)
 app.include_router(job_router)
@@ -150,8 +152,10 @@ app.include_router(dashboard_router)
 app.include_router(admin_router)
 app.include_router(superadmin_router)
 app.include_router(api_keys_router)
+app.include_router(members.router)
 app.include_router(billing_router)
 app.include_router(account_router)
+app.include_router(workspace_router)
 
 
 # Healthcheck

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '../components/Toast';
 
 export default function DeleteAccount() {
-  const { user, logout } = useAuth();
+  const { user, firebaseUser, logout } = useAuth();
   const navigate = useNavigate();
   const { showToast } = useToast();
   
@@ -21,7 +21,7 @@ export default function DeleteAccount() {
       const res = await fetch('http://localhost:8000/api/account', {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${await user.getIdToken()}`
+          'Authorization': `Bearer ${await firebaseUser.getIdToken()}`
         }
       });
       

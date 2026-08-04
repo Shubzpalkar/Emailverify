@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
+import { PermissionProvider } from './context/PermissionContext';
 import Navbar from './components/Navbar';
 import ProtectedRoute from './components/ProtectedRoute';
 import Landing from './pages/Landing';
@@ -26,12 +27,22 @@ import Security from './pages/Security';
 import BillingSummary from './pages/BillingSummary';
 import APISummary from './pages/APISummary';
 import Usage from './pages/Usage';
+import TeamMembers from './pages/TeamMembers';
 import DeleteAccount from './pages/DeleteAccount';
+import WorkspaceOverview from './pages/WorkspaceOverview';
+import WorkspaceSettings from './pages/WorkspaceSettings';
+import AcceptInvite from './pages/AcceptInvite';
 
 
 function GuestRoute({ children }) {
   const { user, firebaseUser, loading } = useAuth();
-  if (loading) return null;
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 'calc(100vh - 70px)' }}>
+        <div style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>Loading Auth...</div>
+      </div>
+    );
+  }
   if (user && firebaseUser?.emailVerified) return <Navigate to="/dashboard" replace />;
   if (user && !firebaseUser?.emailVerified) return <Navigate to="/verify-email" replace />;
   return children;
@@ -39,7 +50,7 @@ function GuestRoute({ children }) {
 
 export default function App() {
   return (
-    <>
+    <PermissionProvider>
       <Navbar />
       <main style={{ paddingTop: '75px' }}>
         <Routes>
@@ -51,6 +62,7 @@ export default function App() {
           <Route path="/forgot-password" element={<GuestRoute><ForgotPassword /></GuestRoute>} />
           <Route path="/reset-password" element={<GuestRoute><ResetPassword /></GuestRoute>} />
           <Route path="/verify-email" element={<VerifyEmail />} />
+          <Route path="/accept-invite" element={<AcceptInvite />} />
 
           {/* Protected routes */}
           <Route element={<ProtectedRoute />}>
@@ -72,6 +84,9 @@ export default function App() {
               <Route path="billing" element={<BillingSummary />} />
               <Route path="api" element={<APISummary />} />
               <Route path="usage" element={<Usage />} />
+              <Route path="workspace" element={<WorkspaceOverview />} />
+              <Route path="team" element={<TeamMembers />} />
+              <Route path="workspace-settings" element={<WorkspaceSettings />} />
               <Route path="delete" element={<DeleteAccount />} />
             </Route>
           </Route>
@@ -90,6 +105,6 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
-    </>
+    </PermissionProvider>
   );
 }

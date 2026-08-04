@@ -34,6 +34,7 @@ class UserResponse(BaseModel):
     tier: str | None = None
     company: str | None = None
     phone: str | None = None
+    workspace_id: str | None = None
 
 
 def get_password_hash(password):
@@ -66,6 +67,7 @@ def _row_to_user(row) -> UserResponse:
         tier=row[14],
         company=row[15] if len(row) > 15 else None,
         phone=row[16] if len(row) > 16 else None,
+        workspace_id=row[17] if len(row) > 17 else None,
     )
 
 
@@ -73,7 +75,7 @@ def _select_user_by_id(db, user_id: str):
     return db.execute("""
         SELECT id, firebase_uid, email, display_name, role, plan, credits, status,
                created_at, last_login, email_verified, admin_id, credit_pool,
-               is_active, tier, company, phone
+               is_active, tier, company, phone, workspace_id
         FROM users
         WHERE id = ?
     """, [user_id]).fetchone()
@@ -83,7 +85,7 @@ def _select_user_by_firebase_or_email(db, firebase_user: FirebaseUser):
     user = db.execute("""
         SELECT id, firebase_uid, email, display_name, role, plan, credits, status,
                created_at, last_login, email_verified, admin_id, credit_pool,
-               is_active, tier, company, phone
+               is_active, tier, company, phone, workspace_id
         FROM users
         WHERE firebase_uid = ?
     """, [firebase_user.firebase_uid]).fetchone()
@@ -93,7 +95,7 @@ def _select_user_by_firebase_or_email(db, firebase_user: FirebaseUser):
     return db.execute("""
         SELECT id, firebase_uid, email, display_name, role, plan, credits, status,
                created_at, last_login, email_verified, admin_id, credit_pool,
-               is_active, tier, company, phone
+               is_active, tier, company, phone, workspace_id
         FROM users
         WHERE lower(email) = lower(?)
     """, [firebase_user.email]).fetchone()
@@ -107,6 +109,16 @@ def sync_firebase_user(firebase_user: FirebaseUser) -> UserResponse:
     if existing:
         user_id = existing[0]
         current_fb_uid = existing[1]
+        workspace_id = existing[17] if len(existing) > 17 else None
+
+        if not workspace_id:
+            workspace_id = str(uuid.uuid4())
+            slug = f"{firebase_user.display_name or 'workspace'}-{str(uuid.uuid4())[:8]}".lower().replace(" ", "-")
+            db.execute("""
+                INSERT INTO workspaces (id, company_name, workspace_slug, owner_user_id, credits_remaining, plan)
+                VALUES (?, ?, ?, ?, 100, 'Free')
+            """, [workspace_id, firebase_user.display_name or "My Workspace", slug, user_id])
+            db.execute("UPDATE users SET workspace_id = ? WHERE id = ?", [workspace_id, user_id])
 
         if current_fb_uid is None:
             try:
@@ -160,13 +172,21 @@ def sync_firebase_user(firebase_user: FirebaseUser) -> UserResponse:
         return _row_to_user(_select_user_by_id(db, user_id))
 
     user_id = str(uuid.uuid4())
+    workspace_id = str(uuid.uuid4())
+    slug = f"{firebase_user.display_name or 'workspace'}-{str(uuid.uuid4())[:8]}".lower().replace(" ", "-")
+
+    db.execute("""
+        INSERT INTO workspaces (id, company_name, workspace_slug, owner_user_id, credits_remaining, plan)
+        VALUES (?, ?, ?, ?, 100, 'Free')
+    """, [workspace_id, firebase_user.display_name or "My Workspace", slug, user_id])
+
     db.execute("""
         INSERT INTO users (
             id, firebase_uid, email, display_name, role, plan, credits,
             credit_pool, status, is_active, tier, created_at, last_login,
-            email_verified, password_hash
+            email_verified, password_hash, workspace_id
         )
-        VALUES (?, ?, ?, ?, 'user', 'Free', 100, 100, 'Active', TRUE, 'free', ?, ?, ?, '')
+        VALUES (?, ?, ?, ?, 'user', 'Free', 100, 100, 'Active', TRUE, 'free', ?, ?, ?, '', ?)
     """, [
         user_id,
         firebase_user.firebase_uid,
@@ -175,6 +195,7 @@ def sync_firebase_user(firebase_user: FirebaseUser) -> UserResponse:
         now,
         now,
         firebase_user.email_verified,
+        workspace_id
     ])
     return _row_to_user(_select_user_by_id(db, user_id))
 
@@ -250,6 +271,35 @@ async def get_me(firebase_user: FirebaseUser = Depends(verify_firebase_token)):
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account suspended")
     return user
+
+@router.get("/permissions")
+async def get_my_permissions(current_user: UserResponse = Depends(get_current_user)):
+    db = get_db()
+    
+    role_id = db.execute("SELECT role_id FROM users WHERE id = ?", [current_user.id]).fetchone()
+    
+    if not role_id or not role_id[0]:
+        if current_user.role == 'superadmin':
+            role_id = 'role_superadmin'
+        elif current_user.role == 'admin':
+            role_id = 'role_companyadmin'
+        elif current_user.role == 'manager':
+            role_id = 'role_manager'
+        elif current_user.role == 'viewer':
+            role_id = 'role_viewer'
+        else:
+            role_id = 'role_teammember'
+    else:
+        role_id = role_id[0]
+        
+    perms = db.execute("""
+        SELECT p.key 
+        FROM role_permissions rp
+        JOIN permissions p ON rp.permission_id = p.id
+        WHERE rp.role_id = ?
+    """, [role_id]).fetchall()
+    
+    return [p[0] for p in perms]
 
 
 @router.post("/logout")

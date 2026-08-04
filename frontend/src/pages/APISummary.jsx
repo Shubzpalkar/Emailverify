@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 
 export default function APISummary() {
-  const { user } = useAuth();
+  const { user, firebaseUser } = useAuth();
   const [data, setData] = useState({
     api_enabled: false,
     api_key_count: 0,
@@ -17,7 +17,7 @@ export default function APISummary() {
       try {
         const res = await fetch('http://localhost:8000/api/account/api-summary', {
           headers: {
-            'Authorization': `Bearer ${await user.getIdToken()}`
+            'Authorization': `Bearer ${await firebaseUser.getIdToken()}`
           }
         });
         if (res.ok) {

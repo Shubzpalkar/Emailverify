@@ -48,39 +48,68 @@ def init_db():
         is_active BOOLEAN DEFAULT TRUE,
         tier VARCHAR DEFAULT 'free',
         company VARCHAR,
-        phone VARCHAR
+        phone VARCHAR,
+        admin_id VARCHAR,
+        created_by VARCHAR,
+        custom_rate_limit INTEGER,
+        workspace_id VARCHAR,
+        department VARCHAR
+    );
+    """)
+    
+    db.execute("""
+    CREATE TABLE IF NOT EXISTS workspaces (
+        id VARCHAR PRIMARY KEY,
+        company_name VARCHAR NOT NULL,
+        workspace_slug VARCHAR UNIQUE NOT NULL,
+        company_logo VARCHAR,
+        industry VARCHAR,
+        company_size VARCHAR,
+        website VARCHAR,
+        country VARCHAR,
+        timezone VARCHAR,
+        language VARCHAR DEFAULT 'en',
+        plan VARCHAR DEFAULT 'Free',
+        credits_remaining INTEGER DEFAULT 0,
+        credits_used INTEGER DEFAULT 0,
+        workspace_status VARCHAR DEFAULT 'Active',
+        owner_user_id VARCHAR NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
     
     db.execute("""
     CREATE TABLE IF NOT EXISTS api_keys (
         id VARCHAR PRIMARY KEY,
-        user_id VARCHAR NOT NULL REFERENCES users(id),
+        user_id VARCHAR NOT NULL,
         name VARCHAR NOT NULL,
         key_hash VARCHAR NOT NULL,
         prefix VARCHAR NOT NULL,
         last_used TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        workspace_id VARCHAR
     );
     """)
     
     db.execute("""
     CREATE TABLE IF NOT EXISTS verification_jobs (
         id VARCHAR PRIMARY KEY,
-        user_id VARCHAR NOT NULL REFERENCES users(id),
+        user_id VARCHAR NOT NULL,
         file_name VARCHAR,
         total_emails INTEGER DEFAULT 0,
         processed_emails INTEGER DEFAULT 0,
         status VARCHAR DEFAULT 'pending',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        completed_at TIMESTAMP
+        completed_at TIMESTAMP,
+        workspace_id VARCHAR
     );
     """)
     
     db.execute("""
     CREATE TABLE IF NOT EXISTS verification_results (
         id VARCHAR PRIMARY KEY,
-        job_id VARCHAR NOT NULL REFERENCES verification_jobs(id),
+        job_id VARCHAR NOT NULL,
         email VARCHAR NOT NULL,
         domain VARCHAR,
         status VARCHAR,
@@ -94,10 +123,11 @@ def init_db():
     db.execute("""
     CREATE TABLE IF NOT EXISTS credits_log (
         id VARCHAR PRIMARY KEY,
-        user_id VARCHAR NOT NULL REFERENCES users(id),
+        user_id VARCHAR NOT NULL,
         credits_used INTEGER,
         job_id VARCHAR,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        workspace_id VARCHAR
     );
     """)
 
@@ -138,6 +168,31 @@ def init_db():
     );
     """)
 
+    db.execute("""
+    CREATE TABLE IF NOT EXISTS roles (
+        id VARCHAR PRIMARY KEY,
+        name VARCHAR UNIQUE NOT NULL,
+        slug VARCHAR UNIQUE NOT NULL,
+        description VARCHAR
+    );
+    """)
+
+    db.execute("""
+    CREATE TABLE IF NOT EXISTS permissions (
+        id VARCHAR PRIMARY KEY,
+        key VARCHAR UNIQUE NOT NULL,
+        description VARCHAR
+    );
+    """)
+
+    db.execute("""
+    CREATE TABLE IF NOT EXISTS role_permissions (
+        role_id VARCHAR,
+        permission_id VARCHAR,
+        PRIMARY KEY (role_id, permission_id)
+    );
+    """)
+
     # Billing & Subscription module tables
     db.execute("""
     CREATE TABLE IF NOT EXISTS plans (
@@ -158,7 +213,7 @@ def init_db():
     db.execute("""
     CREATE TABLE IF NOT EXISTS subscriptions (
         id VARCHAR PRIMARY KEY,
-        user_id VARCHAR NOT NULL REFERENCES users(id),
+        user_id VARCHAR NOT NULL,
         dodo_customer_id VARCHAR,
         dodo_subscription_id VARCHAR,
         plan_name VARCHAR NOT NULL,
@@ -168,14 +223,15 @@ def init_db():
         start_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         end_date TIMESTAMP,
         auto_renew BOOLEAN DEFAULT TRUE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        workspace_id VARCHAR
     );
     """)
 
     db.execute("""
     CREATE TABLE IF NOT EXISTS payments (
         id VARCHAR PRIMARY KEY,
-        user_id VARCHAR NOT NULL REFERENCES users(id),
+        user_id VARCHAR NOT NULL,
         dodo_customer_id VARCHAR,
         subscription_id VARCHAR,
         checkout_session_id VARCHAR UNIQUE,
@@ -185,14 +241,15 @@ def init_db():
         currency VARCHAR DEFAULT 'INR',
         invoice_id VARCHAR,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        workspace_id VARCHAR
     );
     """)
 
     db.execute("""
     CREATE TABLE IF NOT EXISTS payment_transactions (
         id VARCHAR PRIMARY KEY,
-        payment_id VARCHAR REFERENCES payments(id),
+        payment_id VARCHAR,
         event_type VARCHAR,
         status VARCHAR,
         raw_payload VARCHAR,
@@ -203,38 +260,68 @@ def init_db():
     db.execute("""
     CREATE TABLE IF NOT EXISTS credit_transactions (
         id VARCHAR PRIMARY KEY,
-        user_id VARCHAR NOT NULL REFERENCES users(id),
+        user_id VARCHAR NOT NULL,
         amount INTEGER NOT NULL,
         transaction_type VARCHAR NOT NULL,
         description VARCHAR,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        workspace_id VARCHAR
     );
     """)
 
     db.execute("""
     CREATE TABLE IF NOT EXISTS invoices (
         id VARCHAR PRIMARY KEY,
-        user_id VARCHAR NOT NULL REFERENCES users(id),
-        payment_id VARCHAR REFERENCES payments(id),
+        user_id VARCHAR NOT NULL,
+        payment_id VARCHAR,
         invoice_number VARCHAR UNIQUE NOT NULL,
         amount DOUBLE NOT NULL,
         tax DOUBLE DEFAULT 0.0,
         plan_name VARCHAR NOT NULL,
         status VARCHAR DEFAULT 'paid',
         billing_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        pdf_path VARCHAR
+        pdf_path VARCHAR,
+        workspace_id VARCHAR
     );
     """)
 
     db.execute("""
     CREATE TABLE IF NOT EXISTS billing_history (
         id VARCHAR PRIMARY KEY,
-        user_id VARCHAR NOT NULL REFERENCES users(id),
-        payment_id VARCHAR REFERENCES payments(id),
+        user_id VARCHAR NOT NULL,
+        payment_id VARCHAR,
         plan_name VARCHAR NOT NULL,
         amount DOUBLE NOT NULL,
         currency VARCHAR DEFAULT 'INR',
         status VARCHAR NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        workspace_id VARCHAR
+    );
+    """)
+
+    db.execute("""
+    CREATE TABLE IF NOT EXISTS audit_logs (
+        id VARCHAR PRIMARY KEY,
+        workspace_id VARCHAR NOT NULL,
+        actor_id VARCHAR NOT NULL,
+        action VARCHAR NOT NULL,
+        target_id VARCHAR,
+        details VARCHAR,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+    
+    db.execute("""
+    CREATE TABLE IF NOT EXISTS invitations (
+        id VARCHAR PRIMARY KEY,
+        workspace_id VARCHAR NOT NULL,
+        email VARCHAR NOT NULL,
+        role VARCHAR DEFAULT 'user',
+        department VARCHAR,
+        token VARCHAR UNIQUE NOT NULL,
+        status VARCHAR DEFAULT 'Pending',
+        created_by VARCHAR NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
@@ -281,7 +368,22 @@ def init_db():
         "ALTER TABLE users ADD COLUMN last_login TIMESTAMP DEFAULT NULL",
         "ALTER TABLE users ADD COLUMN custom_rate_limit INTEGER DEFAULT NULL",
         "ALTER TABLE users ADD COLUMN company VARCHAR DEFAULT NULL",
-        "ALTER TABLE users ADD COLUMN phone VARCHAR DEFAULT NULL"
+        "ALTER TABLE users ADD COLUMN phone VARCHAR DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN workspace_id VARCHAR DEFAULT NULL",
+        "ALTER TABLE api_keys ADD COLUMN workspace_id VARCHAR DEFAULT NULL",
+        "ALTER TABLE verification_jobs ADD COLUMN workspace_id VARCHAR DEFAULT NULL",
+        "ALTER TABLE credits_log ADD COLUMN workspace_id VARCHAR DEFAULT NULL",
+        "ALTER TABLE subscriptions ADD COLUMN workspace_id VARCHAR DEFAULT NULL",
+        "ALTER TABLE payments ADD COLUMN workspace_id VARCHAR DEFAULT NULL",
+        "ALTER TABLE credit_transactions ADD COLUMN workspace_id VARCHAR DEFAULT NULL",
+        "ALTER TABLE invoices ADD COLUMN workspace_id VARCHAR DEFAULT NULL",
+        "ALTER TABLE billing_history ADD COLUMN workspace_id VARCHAR DEFAULT NULL",
+        "CREATE INDEX IF NOT EXISTS idx_users_workspace ON users(workspace_id)",
+        "CREATE INDEX IF NOT EXISTS idx_jobs_workspace ON verification_jobs(workspace_id)",
+        "CREATE INDEX IF NOT EXISTS idx_api_keys_workspace ON api_keys(workspace_id)",
+        "CREATE INDEX IF NOT EXISTS idx_credits_workspace ON credits_log(workspace_id)",
+        "ALTER TABLE users ADD COLUMN role_id VARCHAR DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN joined_at TIMESTAMP DEFAULT NULL"
     ]
     for sql in migrations:
         try:
@@ -325,3 +427,59 @@ def init_db():
         """, [sa_id, settings.SUPERADMIN_EMAIL, hashed, datetime.now(timezone.utc)])
         print(f"[BOOT] Superadmin created: {settings.SUPERADMIN_EMAIL} / {settings.SUPERADMIN_PASSWORD}")
         print(f"[BOOT] CHANGE THIS PASSWORD IMMEDIATELY after first login.")
+
+    # RBAC SEEDING
+    roles_data = [
+        ("role_superadmin", "Super Admin", "superadmin", "Full system access"),
+        ("role_companyadmin", "Company Admin", "admin", "Full workspace access"),
+        ("role_manager", "Manager", "manager", "Manage team and operations"),
+        ("role_teammember", "Team Member", "user", "Standard user access"),
+        ("role_viewer", "Viewer", "viewer", "Read-only access")
+    ]
+    for rid, rname, rslug, rdesc in roles_data:
+        try:
+            db.execute("INSERT INTO roles (id, name, slug, description) VALUES (?, ?, ?, ?)", [rid, rname, rslug, rdesc])
+        except Exception:
+            pass
+
+    perms_data = [
+        "dashboard.view", "verification.bulk", "verification.single", "verification.download", "verification.history",
+        "analytics.view", "team.view", "team.invite", "team.remove", "team.suspend", "team.change_role",
+        "workspace.view", "workspace.update", "workspace.settings", "credits.view", "credits.manage",
+        "api.view", "api.create", "api.revoke", "notifications.view", "notifications.manage",
+        "audit.view", "billing.view", "billing.manage", "admin.view", "admin.manage"
+    ]
+    
+    for p in perms_data:
+        try:
+            db.execute("INSERT INTO permissions (id, key, description) VALUES (?, ?, ?)", [f"perm_{p}", p, f"Permission for {p}"])
+        except Exception:
+            pass
+
+    db.execute("DELETE FROM role_permissions")
+    
+    def add_role_perms(role_id, perms):
+        for p in perms:
+            db.execute("INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)", [role_id, f"perm_{p}"])
+            
+    add_role_perms("role_superadmin", perms_data)
+    add_role_perms("role_companyadmin", [p for p in perms_data if not p.startswith("admin.")])
+    add_role_perms("role_manager", [
+        "dashboard.view", "verification.bulk", "verification.single", "verification.download", "verification.history",
+        "analytics.view", "team.view", "team.invite", "team.suspend", "workspace.view", "credits.view", "notifications.view", "notifications.manage"
+    ])
+    add_role_perms("role_teammember", [
+        "dashboard.view", "verification.bulk", "verification.single", "verification.download", "verification.history",
+        "analytics.view", "team.view", "workspace.view", "credits.view", "api.view", "notifications.view"
+    ])
+    add_role_perms("role_viewer", [
+        "dashboard.view", "verification.history", "analytics.view", "team.view", "workspace.view", "credits.view", "api.view", "notifications.view"
+    ])
+
+    try:
+        db.execute("UPDATE users SET role_id = 'role_superadmin' WHERE role = 'superadmin' AND role_id IS NULL")
+        db.execute("UPDATE users SET role_id = 'role_companyadmin' WHERE role = 'admin' AND role_id IS NULL")
+        db.execute("UPDATE users SET role_id = 'role_teammember' WHERE role = 'user' AND role_id IS NULL")
+        db.execute("UPDATE users SET joined_at = created_at WHERE joined_at IS NULL")
+    except Exception:
+        pass

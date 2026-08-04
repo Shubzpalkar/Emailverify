@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 
 export default function Settings() {
-  const { user, sendPasswordReset } = useAuth();
+  const { user, firebaseUser, sendPasswordReset, syncUser } = useAuth();
   const { showToast } = useToast();
   const [formData, setFormData] = useState({
     display_name: user?.display_name || '',
@@ -24,13 +24,13 @@ export default function Settings() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${await user.getIdToken()}`
+          'Authorization': `Bearer ${await firebaseUser.getIdToken()}`
         },
         body: JSON.stringify(formData)
       });
       if (!res.ok) throw new Error('Failed to update profile');
+      await syncUser();
       showToast('Profile updated successfully', 'success');
-      // In a real app we might want to refresh the user context here
     } catch (error) {
       showToast(error.message, 'error');
     } finally {

@@ -10,6 +10,7 @@ import json
 from datetime import datetime, timezone, timedelta
 
 from auth import get_current_user, UserResponse
+from middleware.rbac import require_permission
 from config import settings
 from database import get_db, get_db_write_lock
 
@@ -65,7 +66,7 @@ def get_plans():
     return PLANS_DATA
 
 @router.get("/subscription")
-def get_user_subscription(current_user: UserResponse = Depends(get_current_user)):
+def get_user_subscription(current_user: UserResponse = Depends(require_permission("billing.view"))):
     db = get_db()
     sub = db.execute("""
         SELECT plan_name, status, credits_allotted, credits_used, start_date, end_date, auto_renew 
@@ -96,7 +97,7 @@ def get_user_subscription(current_user: UserResponse = Depends(get_current_user)
     }
 
 @router.get("/dashboard")
-def get_billing_dashboard(current_user: UserResponse = Depends(get_current_user)):
+def get_billing_dashboard(current_user: UserResponse = Depends(require_permission("billing.view"))):
     db = get_db()
     
     # Subscription info
@@ -122,8 +123,8 @@ def get_billing_dashboard(current_user: UserResponse = Depends(get_current_user)
         "next_billing_date": sub["end_date"]
     }
 
-@router.post("/create-checkout")
-async def create_checkout(req: CheckoutRequest, current_user: UserResponse = Depends(get_current_user)):
+@router.post("/checkout")
+async def create_checkout(req: CheckoutRequest, current_user: UserResponse = Depends(require_permission("billing.manage"))):
     if not req.plan_name and not req.credits_pack:
         raise HTTPException(status_code=400, detail="Must select a plan or credits pack")
         
@@ -219,8 +220,8 @@ async def create_checkout(req: CheckoutRequest, current_user: UserResponse = Dep
     
     return {"checkout_url": checkout_url, "session_id": checkout_id}
 
-@router.post("/verify-payment")
-async def verify_payment(req: VerifyPaymentRequest, current_user: UserResponse = Depends(get_current_user)):
+@router.post("/verify")
+async def verify_payment(req: VerifyPaymentRequest, current_user: UserResponse = Depends(require_permission("billing.manage"))):
     db = get_db()
     
     payment = db.execute("""
@@ -311,8 +312,8 @@ async def verify_payment(req: VerifyPaymentRequest, current_user: UserResponse =
         
     return {"status": "success", "message": "Payment verified and credits allocated successfully."}
 
-@router.post("/cancel-subscription")
-async def cancel_subscription(current_user: UserResponse = Depends(get_current_user)):
+@router.post("/cancel")
+async def cancel_subscription(current_user: UserResponse = Depends(require_permission("billing.manage"))):
     db = get_db()
     
     # Get active subscription
@@ -349,12 +350,12 @@ async def cancel_subscription(current_user: UserResponse = Depends(get_current_u
     return {"status": "success", "message": "Subscription renewal cancelled successfully."}
 
 @router.post("/change-plan")
-async def change_plan(req: CheckoutRequest, current_user: UserResponse = Depends(get_current_user)):
+async def change_plan(req: CheckoutRequest, current_user: UserResponse = Depends(require_permission("billing.manage"))):
     # Creates a checkout session to upgrade/downgrade plans
     return await create_checkout(req, current_user)
 
 @router.get("/invoices")
-def get_user_invoices(current_user: UserResponse = Depends(get_current_user)):
+def get_user_invoices(current_user: UserResponse = Depends(require_permission("billing.view"))):
     db = get_db()
     rows = db.execute("""
         SELECT i.id, i.invoice_number, i.billing_date, i.amount, i.tax, i.plan_name, i.status 
@@ -375,7 +376,7 @@ def get_user_invoices(current_user: UserResponse = Depends(get_current_user)):
     ]
 
 @router.get("/payments")
-def get_user_payments(current_user: UserResponse = Depends(get_current_user)):
+def get_user_payments(current_user: UserResponse = Depends(require_permission("billing.view"))):
     db = get_db()
     rows = db.execute("""
         SELECT p.created_at, p.transaction_id, p.plan_name, p.amount, p.currency, p.payment_status, p.invoice_id 
@@ -395,8 +396,8 @@ def get_user_payments(current_user: UserResponse = Depends(get_current_user)):
         } for r in rows
     ]
 
-@router.get("/credits")
-def get_user_credits_data(current_user: UserResponse = Depends(get_current_user)):
+@router.get("/credits-history")
+def get_user_credits_data(current_user: UserResponse = Depends(require_permission("credits.view"))):
     db = get_db()
     
     # Total purchased (sum of credit purchases)
@@ -438,8 +439,8 @@ def get_user_credits_data(current_user: UserResponse = Depends(get_current_user)
         ]
     }
 
-@router.get("/customer-portal")
-def get_customer_portal(current_user: UserResponse = Depends(get_current_user)):
+@router.get("/portal")
+def get_customer_portal(current_user: UserResponse = Depends(require_permission("billing.manage"))):
     # Dodo Payments billing portal redirect link
     if settings.DODO_PAYMENTS_API_KEY:
         return {"portal_url": "https://test.dodopayments.com/customer-portal"}
@@ -638,8 +639,8 @@ async def dodo_webhook(request: Request):
     return {"status": "success"}
 
 # --- Admin Dashboard Stats Endpoint ---
-@router.get("/admin-stats")
-def get_admin_billing_stats(current_user: UserResponse = Depends(get_current_user)):
+@router.get("/admin/stats")
+def get_admin_billing_stats(current_user: UserResponse = Depends(require_permission("admin.view"))):
     if current_user.role not in ('admin', 'superadmin'):
         raise HTTPException(status_code=403, detail="Unauthorized")
         
