@@ -11,29 +11,42 @@
 
 .toast {
   background: var(--bg-surface);
-  color: white;
+  color: var(--text-main);
   padding: 1rem 1.5rem;
   border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
   border-left: 4px solid var(--primary);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
   animation: toastSlideIn 0.3s ease forwards;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
   min-width: 280px;
+  max-width: 460px;
   pointer-events: auto;
+  font-weight: 500;
+  font-size: 0.95rem;
 }
 
 .toast-error {
-  border-color: var(--error);
+  border-left-color: var(--error);
+}
+
+.toast-error svg {
+  color: var(--error);
 }
 
 .toast-success {
-  border-color: var(--success);
+  border-left-color: var(--success);
+}
+
+.toast-success svg {
+  color: var(--success);
 }
 
 @keyframes toastSlideIn {
   from { transform: translateX(100%); opacity: 0; }
   to   { transform: translateX(0); opacity: 1; }
 }
+

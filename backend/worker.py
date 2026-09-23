@@ -15,7 +15,7 @@ _result_buffer: deque = deque()
 
 async def _buffer_result(result: dict, db):
     _result_buffer.append(result)
-    if len(_result_buffer) >= settings.DB_WRITE_BATCH_SIZE:
+    if len(_result_buffer) >= 10:
         await _flush_result_buffer(db)
 
 async def _flush_result_buffer(db):
@@ -26,12 +26,28 @@ async def _flush_result_buffer(db):
         while _result_buffer:
             batch.append(_result_buffer.popleft())
         if batch:
-            db.executemany(
-                "INSERT OR REPLACE INTO verification_results "
-                "(id, job_id, email, domain, status, is_role, is_disposable, smtp_result) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                [tuple(r.values()) for r in batch]
-            )
+            try:
+                records = [
+                    (
+                        r.get("id", str(uuid.uuid4())),
+                        r.get("job_id"),
+                        r.get("email"),
+                        r.get("domain"),
+                        r.get("status", "unknown"),
+                        bool(r.get("is_role", False)),
+                        bool(r.get("is_disposable", False)),
+                        str(r.get("smtp_result", ""))
+                    )
+                    for r in batch
+                ]
+                db.executemany(
+                    "INSERT OR REPLACE INTO verification_results "
+                    "(id, job_id, email, domain, status, is_role, is_disposable, smtp_result) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    records
+                )
+            except Exception as e:
+                logger.error(f"Failed to flush verification results buffer: {e}")
 
 async def bulk_cache_lookup(emails: list[str], db) -> dict[str, dict]:
     placeholders = ", ".join(["?" for _ in emails])

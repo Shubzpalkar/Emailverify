@@ -34,8 +34,12 @@ export default function Login() {
       routeAfterLogin(firebaseUser, user);
     } catch (err) {
       let msg = err.message || 'Login failed';
-      if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential' || msg.includes('invalid-credential')) {
-        msg = 'Invalid credentials or account not found in Firebase Auth. If logging in as superadmin, please Sign Up with superadmin@system.local first.';
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential' || msg.includes('invalid-credential') || msg.includes('user-not-found')) {
+        msg = 'Invalid credentials or account not found. Please check your email and password.';
+      } else if (err.code === 'auth/wrong-password') {
+        msg = 'Incorrect password. Please try again.';
+      } else if (err.code === 'auth/too-many-requests') {
+        msg = 'Access to this account has been temporarily disabled due to many failed login attempts. You can reset your password or try again later.';
       }
       showToast(msg, 'error');
     } finally {

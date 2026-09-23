@@ -40,6 +40,8 @@ async def _periodic_flush():
 def seed_superadmin_in_firebase():
     from firebase_admin import auth as firebase_admin_auth
     from database import get_db
+    from firebase.firebase import initialize_firebase
+    initialize_firebase()
     
     email = settings.SUPERADMIN_EMAIL
     password = settings.SUPERADMIN_PASSWORD

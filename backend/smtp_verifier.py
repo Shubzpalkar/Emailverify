@@ -21,18 +21,21 @@ def get_domain_semaphore(domain: str, max_concurrent: int = 5) -> asyncio.Semaph
 def map_smtp_response(code: int, message: str) -> Tuple[str, str]:
     """
     Map SMTP response codes and error messages to structured statuses and detailed reasons.
-    Full support for 220, 221, 250, 251, 252, 421, 422, 431, 432, 450, 451, 452, 454, 500-504, 521, 530, 535, 550-554, 571.
+    Ensures 220/221 greetings are NEVER treated as Deliverable.
     """
     msg_lower = message.lower()
 
+    if "error on mail from" in msg_lower:
+        if code >= 500:
+            return "Protected", f"Sender address rejected during MAIL FROM ({code}): {message}"
+        return "Temporary Failure", f"Temporary error during MAIL FROM ({code}): {message}"
+
     if code in (220, 221):
-        return "Deliverable", "Service ready or closing channel"
-    if code == 250:
-        return "Deliverable", "Mailbox exists and accepts messages"
-    if code == 251:
-        return "Deliverable", "User not local; will forward to target address"
+        return "Temporary Failure", f"Protocol greeting/closing response code {code} during RCPT TO stage"
+    if code in (250, 251):
+        return "Deliverable", "Recipient address explicitly accepted by target server"
     if code == 252:
-        return "Catch-All", "Cannot verify mailbox directly; server accepts recipient tentatively"
+        return "Catch-All", "Cannot verify mailbox directly; server accepts recipient tentatively (code 252)"
 
     # Temporary & Resource Quota Errors (4xx)
     if code == 421:
@@ -70,11 +73,13 @@ def map_smtp_response(code: int, message: str) -> Tuple[str, str]:
 
     # Permanent Failures (550, 551, 552, 553, 554)
     if code == 550:
-        if any(term in msg_lower for term in ["spam", "block", "blackhole", "rbl", "reputation", "policy", "denied", "barracuda", "proofpoint", "mimecast"]):
-            return "Protected", "SMTP verification blocked by recipient anti-spam policy"
+        if any(term in msg_lower for term in ["spam", "block", "blackhole", "rbl", "reputation", "policy", "denied", "barracuda", "proofpoint", "mimecast", "dmarc", "spf", "dkim", "relay", "rejected"]):
+            return "Protected", f"SMTP verification blocked by recipient anti-spam/security policy ({message})"
         if any(term in msg_lower for term in ["disabled", "inactive", "suspended", "closed"]):
             return "Disabled", "Recipient mailbox is disabled or suspended"
-        return "Undeliverable", "Mailbox does not exist (550 User unknown)"
+        if any(term in msg_lower for term in ["no such", "not found", "does not exist", "unknown", "invalid", "unreachable", "recipient", "user"]):
+            return "Undeliverable", f"Mailbox does not exist (550 User unknown)"
+        return "Undeliverable", f"Recipient rejected by target server (550): {message}"
     if code == 551:
         return "Undeliverable", "User not local; please try forwarding path"
     if code == 552:
@@ -82,11 +87,13 @@ def map_smtp_response(code: int, message: str) -> Tuple[str, str]:
     if code == 553:
         return "Undeliverable", "Requested action not taken: mailbox name invalid"
     if code == 554:
-        return "Protected", "Transaction failed due to anti-spam policy or security reject"
+        if any(term in msg_lower for term in ["no such", "unknown", "not found", "does not exist"]):
+            return "Undeliverable", f"Mailbox rejected (554): {message}"
+        return "Protected", f"Transaction failed due to anti-spam policy or security reject: {message}"
 
     # Connection & Socket Errors (Code 0)
     if code == 0:
-        if any(term in msg_lower for term in ["refused", "reset", "closed", "connect"]):
+        if any(term in msg_lower for term in ["refused", "reset", "closed", "connect", "firewall", "blocked"]):
             return "Protected", f"Port 25 connection reset or blocked by target firewall: {message}"
         if "timeout" in msg_lower:
             return "Temporary Failure", f"SMTP connection timeout: {message}"

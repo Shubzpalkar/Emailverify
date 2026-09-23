@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, CheckCircle, Circle, DownloadSimple } from '@phosphor-icons/react';
 import { apiCall } from '../api/client';
+import { useToast } from './Toast';
 import './DownloadModal.css';
 
 const STATUS_CONFIG = [
@@ -24,6 +25,7 @@ const COLUMN_CONFIG = [
 ];
 
 export default function DownloadModal({ job, onClose }) {
+  const { showToast } = useToast();
   const jobId = job?.id || job?.job_id;
 
   const [counts, setCounts] = useState(() => {
@@ -51,6 +53,8 @@ export default function DownloadModal({ job, onClose }) {
   );
 
   const [rowCount, setRowCount] = useState(null);
+  const [countError, setCountError] = useState('');
+  const [countRetry, setCountRetry] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadFormat, setDownloadFormat] = useState(null);
 
@@ -60,6 +64,7 @@ export default function DownloadModal({ job, onClose }) {
     async function loadBreakdown() {
       if (!jobId) return;
       try {
+        setCountError('');
         const res = await apiCall(`/jobs/${jobId}/download/count`);
         if (isMounted && res.by_status) {
           setCounts(res.by_status);
@@ -75,12 +80,15 @@ export default function DownloadModal({ job, onClose }) {
         }
       } catch (err) {
         console.error("Failed to load download counts", err);
+        if (isMounted) {
+          setCountError(err.message || 'The result count could not be loaded.');
+        }
       }
     }
     loadBreakdown();
 
     return () => { isMounted = false; };
-  }, [jobId]);
+  }, [jobId, countRetry]);
 
   // Recalculate rowCount when status selections change
   useEffect(() => {
@@ -88,9 +96,11 @@ export default function DownloadModal({ job, onClose }) {
     const fetchCount = async () => {
       if (!selectedStatuses.length) {
         setRowCount(0);
+        setCountError('');
         return;
       }
       setRowCount(null);
+      setCountError('');
       try {
         const params = new URLSearchParams();
         params.set("statuses", selectedStatuses.join(","));
@@ -98,6 +108,9 @@ export default function DownloadModal({ job, onClose }) {
         if (isMounted) setRowCount(res.total);
       } catch (err) {
         console.error("Failed to fetch count", err);
+        if (isMounted) {
+          setCountError(err.message || 'The result count could not be loaded.');
+        }
       }
     };
 
@@ -156,6 +169,7 @@ export default function DownloadModal({ job, onClose }) {
       window.URL.revokeObjectURL(blobUrl);
     } catch (err) {
       console.error("Failed to download file", err);
+      showToast(err.message || 'Download failed. Please try again.', 'error');
     } finally {
       setIsDownloading(false);
       setDownloadFormat(null);
@@ -217,7 +231,14 @@ export default function DownloadModal({ job, onClose }) {
         </section>
 
         <div className="count-row">
-          {rowCount === null ? (
+          {countError ? (
+            <span className="count-empty">
+              Could not load results: {countError}{' '}
+              <button type="button" className="link-button" onClick={() => setCountRetry(value => value + 1)}>
+                Retry
+              </button>
+            </span>
+          ) : rowCount === null ? (
             <span className="count-loading">Calculating...</span>
           ) : rowCount === 0 ? (
             <span className="count-empty">No results match the selected filters.</span>
@@ -232,7 +253,7 @@ export default function DownloadModal({ job, onClose }) {
           <button
             className="btn-download csv"
             onClick={() => handleDownload("csv")}
-            disabled={isDownloading || rowCount === 0}
+            disabled={isDownloading || rowCount === null || rowCount === 0 || Boolean(countError)}
           >
             {isDownloading && downloadFormat === "csv" ? "Preparing..." : "Download CSV"}
           </button>
@@ -240,7 +261,7 @@ export default function DownloadModal({ job, onClose }) {
           <button
             className="btn-download xlsx"
             onClick={() => handleDownload("xlsx")}
-            disabled={isDownloading || rowCount === 0}
+            disabled={isDownloading || rowCount === null || rowCount === 0 || Boolean(countError)}
           >
             {isDownloading && downloadFormat === "xlsx" ? "Preparing..." : "Download XLSX"}
           </button>

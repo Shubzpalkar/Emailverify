@@ -346,12 +346,12 @@ async def check_domain(domain: str) -> Tuple[str, str]:
         return "valid", ",".join(detail["mx_records"])
     
     if detail["dns_status"] == "no_mx_server":
-        return "invalid", "no_mx_record"
+        return "no_mx", "no_mx_record"
     
     if detail["dns_status"] == "nxdomain":
         return "invalid", "domain_not_found"
 
-    return "invalid", detail["reason"]
+    return "unknown", detail["reason"]
 
 def detect_provider_details(mx_records: List[str], domain: str) -> Tuple[str, str]:
     """

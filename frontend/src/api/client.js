@@ -14,7 +14,13 @@ async function parseError(res) {
   let errorMsg = 'An error occurred';
   try {
     const errorData = await res.json();
-    errorMsg = errorData.detail || errorMsg;
+    if (typeof errorData.detail === 'string') {
+      errorMsg = errorData.detail;
+    } else if (Array.isArray(errorData.detail)) {
+      errorMsg = errorData.detail.map(d => d.msg || JSON.stringify(d)).join(', ');
+    } else if (errorData.message) {
+      errorMsg = typeof errorData.message === 'string' ? errorData.message : JSON.stringify(errorData.message);
+    }
   } catch { /* ignore */ }
   return errorMsg;
 }

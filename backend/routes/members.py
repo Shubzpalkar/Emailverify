@@ -402,7 +402,7 @@ def accept_invite(token: str, req: AcceptInviteRequest):
         
     # Verify the firebase token sent by the frontend
     try:
-        decoded_token = firebase_admin.auth.verify_id_token(req.firebase_token)
+        decoded_token = firebase_admin.auth.verify_id_token(req.firebase_token, clock_skew_seconds=300)
         firebase_uid = decoded_token['uid']
         firebase_email = decoded_token.get('email', '')
         display_name = decoded_token.get('name', '')

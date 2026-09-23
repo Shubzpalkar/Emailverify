@@ -156,7 +156,7 @@ async def get_domain_intelligence(domain: str) -> Optional[dict]:
     res = db.execute("SELECT mx_server, catch_all, disposable, reputation_score FROM domain_intelligence "
                      "WHERE domain = ? AND (epoch(CURRENT_TIMESTAMP) - epoch(last_checked)) < ?", 
                      [domain.lower(), settings.DOMAIN_INTELLIGENCE_TTL]).fetchone()
-    if res:
+    if res and res[0] is not None:
         return {
             "mx_server": res[0],
             "catch_all": bool(res[1]),
@@ -179,7 +179,11 @@ async def get_email_cache(email: str) -> Optional[dict]:
                      "WHERE email = ? AND (epoch(CURRENT_TIMESTAMP) - epoch(verified_at)) < ?", 
                      [email.lower(), settings.EMAIL_CACHE_TTL]).fetchone()
     if res:
-        return {"status": res[0], "confidence": res[1]}
+        cached_status = res[0]
+        # Do not return cached unknown or temporary error results; re-verify for accuracy
+        if cached_status in ("unknown", "temp_failure", "dns_timeout", "servfail"):
+            return None
+        return {"status": cached_status, "confidence": res[1]}
     return None
 
 async def save_email_cache(email: str, status: str, confidence: float):
@@ -361,60 +365,6 @@ async def verify_single_email(email: str, check_catch_all: bool = True) -> Dict[
             }
         }
 
-    if dns_detail["dns_status"] == "no_mx_server" or not dns_detail["mx_records"]:
-        detailed_status = "No MX"
-        quality, conf = compute_quality_and_confidence(detailed_status, is_role, False)
-        legacy_status = map_to_legacy_status(detailed_status, is_role, False)
-        reason = dns_detail["reason"]
-
-        await save_email_cache(email, legacy_status, conf)
-        elapsed_ms = (time.perf_counter() - start_ts) * 1000.0
-        engine_metrics.record_verification(detailed_status, "None", elapsed_ms, dns_ms=dns_ms)
-        return {
-            "email": email,
-            "status": legacy_status,
-            "detailed_status": detailed_status,
-            "quality": quality,
-            "confidence": conf,
-            "domain": domain,
-            "mx_server": None,
-            "mx_host": None,
-            "catch_all": False,
-            "disposable": False,
-            "is_disposable": False,
-            "role_based": is_role,
-            "is_role": is_role,
-            "provider_name": "None",
-            "provider_type": "none",
-            "provider": "None",
-            "reason": reason,
-            "smtp_result": reason,
-            "smtp_code": 0,
-            "smtp_message": "no_mx_server",
-            "dns_status": dns_detail["dns_status"],
-            "retryable": False,
-            "latency_ms": round(elapsed_ms, 2),
-            "verification_time_seconds": round(elapsed_ms / 1000.0, 3),
-            "smtp_transcript": {},
-            "verification_report": {
-                "syntax": True,
-                "domain": domain,
-                "dns": dns_detail,
-                "mx": {"has_mx": False, "records": []},
-                "smtp": {"code": 0, "response": "no_mx_server"},
-                "tls": False,
-                "catch_all": False,
-                "disposable": False,
-                "role_account": is_role,
-                "free_provider": is_free,
-                "mailbox_exists": False,
-                "greylisted": False,
-                "protected": False,
-                "confidence_score": conf,
-                "final_quality": quality
-            }
-        }
-
     # Handle temporary DNS failures without classifying as Invalid
     if dns_detail["dns_status"] in ("timeout", "servfail", "resolver_failure", "network_error", "temp_failure"):
         detailed_status = "DNS Timeout" if dns_detail["dns_status"] == "timeout" else "DNS Failure"
@@ -468,6 +418,65 @@ async def verify_single_email(email: str, check_catch_all: bool = True) -> Dict[
                 "final_quality": quality
             }
         }
+
+    # Handle No MX with A/AAAA fallback check
+    if dns_detail["dns_status"] == "no_mx_server" or not dns_detail["mx_records"]:
+        if dns_detail.get("has_a_record"):
+            # Domain has A/AAAA record -> attempt implicit MX fallback using domain
+            dns_detail["mx_records"] = [domain]
+        else:
+            detailed_status = "Invalid Domain"
+            quality, conf = compute_quality_and_confidence(detailed_status, is_role, False)
+            legacy_status = "invalid"
+            reason = "Domain does not exist or resolve (NXDOMAIN)"
+
+            await save_email_cache(email, legacy_status, conf)
+            elapsed_ms = (time.perf_counter() - start_ts) * 1000.0
+            engine_metrics.record_verification(detailed_status, "None", elapsed_ms, dns_ms=dns_ms)
+            return {
+                "email": email,
+                "status": legacy_status,
+                "detailed_status": detailed_status,
+                "quality": quality,
+                "confidence": conf,
+                "domain": domain,
+                "mx_server": None,
+                "mx_host": None,
+                "catch_all": False,
+                "disposable": False,
+                "is_disposable": False,
+                "role_based": is_role,
+                "is_role": is_role,
+                "provider_name": "None",
+                "provider_type": "none",
+                "provider": "None",
+                "reason": reason,
+                "smtp_result": reason,
+                "smtp_code": 0,
+                "smtp_message": "nxdomain",
+                "dns_status": dns_detail["dns_status"],
+                "retryable": False,
+                "latency_ms": round(elapsed_ms, 2),
+                "verification_time_seconds": round(elapsed_ms / 1000.0, 3),
+                "smtp_transcript": {},
+                "verification_report": {
+                    "syntax": True,
+                    "domain": domain,
+                    "dns": dns_detail,
+                    "mx": {"has_mx": False, "records": []},
+                    "smtp": {"code": 0, "response": "nxdomain"},
+                    "tls": False,
+                    "catch_all": False,
+                    "disposable": False,
+                    "role_account": is_role,
+                    "free_provider": is_free,
+                    "mailbox_exists": False,
+                    "greylisted": False,
+                    "protected": False,
+                    "confidence_score": conf,
+                    "final_quality": quality
+                }
+            }
 
     # 4. Provider & Intelligence Lookup
     mx_records = dns_detail["mx_records"]

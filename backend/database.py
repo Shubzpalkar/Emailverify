@@ -105,6 +105,20 @@ def init_db():
         workspace_id VARCHAR
     );
     """)
+
+    db.execute("""
+    CREATE TABLE IF NOT EXISTS verification_results (
+        id VARCHAR PRIMARY KEY,
+        job_id VARCHAR NOT NULL,
+        email VARCHAR NOT NULL,
+        domain VARCHAR,
+        status VARCHAR NOT NULL,
+        is_role BOOLEAN DEFAULT FALSE,
+        is_disposable BOOLEAN DEFAULT FALSE,
+        smtp_result VARCHAR,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
     
     # Migrations for verification_jobs history enhancements
     job_cols_to_add = [
@@ -307,6 +321,17 @@ def init_db():
     """)
 
     db.execute("""
+    CREATE TABLE IF NOT EXISTS credits_log (
+        id VARCHAR PRIMARY KEY,
+        user_id VARCHAR NOT NULL,
+        workspace_id VARCHAR,
+        credits_used INTEGER DEFAULT 0,
+        job_id VARCHAR,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    db.execute("""
     CREATE TABLE IF NOT EXISTS invoices (
         id VARCHAR PRIMARY KEY,
         user_id VARCHAR NOT NULL,
@@ -480,7 +505,7 @@ def init_db():
         "ALTER TABLE users ADD COLUMN workspace_id VARCHAR DEFAULT NULL",
         "ALTER TABLE api_keys ADD COLUMN workspace_id VARCHAR DEFAULT NULL",
         "ALTER TABLE verification_jobs ADD COLUMN workspace_id VARCHAR DEFAULT NULL",
-        "ALTER TABLE credits_log ADD COLUMN workspace_id VARCHAR DEFAULT NULL",
+        "ALTER TABLE credit_transactions ADD COLUMN workspace_id VARCHAR DEFAULT NULL",
         "ALTER TABLE subscriptions ADD COLUMN workspace_id VARCHAR DEFAULT NULL",
         "ALTER TABLE payments ADD COLUMN workspace_id VARCHAR DEFAULT NULL",
         "ALTER TABLE credit_transactions ADD COLUMN workspace_id VARCHAR DEFAULT NULL",
@@ -489,7 +514,7 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_users_workspace ON users(workspace_id)",
         "CREATE INDEX IF NOT EXISTS idx_jobs_workspace ON verification_jobs(workspace_id)",
         "CREATE INDEX IF NOT EXISTS idx_api_keys_workspace ON api_keys(workspace_id)",
-        "CREATE INDEX IF NOT EXISTS idx_credits_workspace ON credits_log(workspace_id)",
+        "CREATE INDEX IF NOT EXISTS idx_credits_workspace ON credit_transactions(workspace_id)",
         "ALTER TABLE users ADD COLUMN role_id VARCHAR DEFAULT NULL",
         "ALTER TABLE users ADD COLUMN joined_at TIMESTAMP DEFAULT NULL",
         "ALTER TABLE users ADD COLUMN job_title VARCHAR DEFAULT NULL",
@@ -614,8 +639,8 @@ def init_db():
             WHERE workspace_id IS NULL
         """)
         db.execute("""
-            UPDATE credits_log 
-            SET workspace_id = (SELECT u.workspace_id FROM users u WHERE u.id = credits_log.user_id)
+            UPDATE credit_transactions 
+            SET workspace_id = (SELECT u.workspace_id FROM users u WHERE u.id = credit_transactions.user_id)
             WHERE workspace_id IS NULL
         """)
         
