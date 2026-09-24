@@ -15,7 +15,7 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [firebaseUser, setFirebaseUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(Boolean(auth));
 
   const syncUser = async () => {
     const userData = await apiCall('/auth/sync-user', { method: 'POST' });
@@ -24,7 +24,7 @@ export function AuthProvider({ children }) {
   };
 
   const checkAuth = async () => {
-    if (!auth.currentUser) {
+    if (!auth?.currentUser) {
       setUser(null);
       return null;
     }
@@ -34,6 +34,8 @@ export function AuthProvider({ children }) {
   };
 
   useEffect(() => {
+    if (!auth) return undefined;
+
     const unsubscribe = onIdTokenChanged(auth, async (currentFirebaseUser) => {
       setFirebaseUser(currentFirebaseUser);
       if (!currentFirebaseUser) {
