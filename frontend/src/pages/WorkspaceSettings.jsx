@@ -999,8 +999,8 @@ export default function WorkspaceSettings() {
       {/* Danger Zone Confirmation Modal */}
       {dangerModalOpen && (
         <div className="danger-modal-backdrop">
-          <div className="danger-modal-card">
-            <h3 style={{ color: 'var(--danger, #ef4444)', marginTop: 0 }}>Confirm Workspace Deletion</h3>
+          <div className="danger-modal-card" role="dialog" aria-modal="true" aria-labelledby="delete-workspace-title">
+            <h3 id="delete-workspace-title" style={{ color: 'var(--danger, #ef4444)', marginTop: 0 }}>Confirm Workspace Deletion</h3>
             <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
               This action is permanent and cannot be undone. To confirm, please enter your superadmin password and type <code>{gen?.workspace_name || gen?.company_name}</code> below.
             </p>

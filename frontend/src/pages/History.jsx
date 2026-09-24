@@ -137,7 +137,7 @@ export default function History() {
       {/* Header */}
       <div className="history-header">
         <div>
-          <h2>Enterprise Job Management Center</h2>
+          <h1>Verification jobs</h1>
           <p>Monitor, filter, manage, and diagnose all email list verification jobs.</p>
         </div>
         <Link to="/verify" className="btn-primary">

@@ -30,13 +30,13 @@ export default function ResetPassword() {
     uppercase: /[A-Z]/.test(newPassword),
     lowercase: /[a-z]/.test(newPassword),
     number: /[0-9]/.test(newPassword),
-    specialChar: /[^A-Za-z0-9]/.test(newPassword)
+    specialChar: /[^A-Za-z0-9]/.test(newPassword),
   };
 
   const isAllMet = Object.values(requirements).every(Boolean);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     if (newPassword !== confirmPassword) {
       return showToast('Passwords do not match', 'error');
     }
@@ -56,37 +56,39 @@ export default function ResetPassword() {
     }
   };
 
+  const requirementItems = [
+    ['minChar', 'Minimum 8 characters'],
+    ['uppercase', 'At least 1 uppercase letter'],
+    ['lowercase', 'At least 1 lowercase letter'],
+    ['number', 'At least 1 number'],
+    ['specialChar', 'At least 1 special character'],
+  ];
+
   return (
     <section className="auth-container page-enter">
       <div className="glass-card auth-card">
-        <h2>Set new password</h2>
-        <p className="auth-subtitle">Enter your new password below to complete the reset.</p>
+        <div className="auth-eyebrow">Secure your account</div>
+        <h1>Set a new password</h1>
+        <p className="auth-subtitle">Choose a strong password you have not used elsewhere.</p>
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="input-group">
-            <label htmlFor="reset-new-password">New Password</label>
-            <div className="password-input-wrapper" style={{ position: 'relative' }}>
+            <label htmlFor="reset-new-password">New password</label>
+            <div className="password-input-wrapper">
               <input
                 id="reset-new-password"
                 type={showPassword ? 'text' : 'password'}
-                placeholder="••••••••"
+                autoComplete="new-password"
+                placeholder="Enter your new password"
                 value={newPassword}
-                onChange={e => setNewPassword(e.target.value)}
+                onChange={(event) => setNewPassword(event.target.value)}
                 required
-                style={{ paddingRight: '2.5rem' }}
               />
               <button
                 type="button"
                 className="btn-icon password-toggle"
-                onClick={() => setShowPassword(!showPassword)}
-                style={{
-                  position: 'absolute',
-                  right: '10px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer'
-                }}
+                onClick={() => setShowPassword((visible) => !visible)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showPassword}
               >
                 {showPassword ? <EyeSlash size={18} /> : <Eye size={18} />}
               </button>
@@ -94,51 +96,38 @@ export default function ResetPassword() {
           </div>
 
           <div className="input-group">
-            <label htmlFor="reset-confirm-password">Confirm Password</label>
+            <label htmlFor="reset-confirm-password">Confirm password</label>
             <input
               id="reset-confirm-password"
               type={showPassword ? 'text' : 'password'}
-              placeholder="••••••••"
+              autoComplete="new-password"
+              placeholder="Repeat your new password"
               value={confirmPassword}
-              onChange={e => setConfirmPassword(e.target.value)}
+              onChange={(event) => setConfirmPassword(event.target.value)}
               required
             />
           </div>
 
-          <div className="password-requirements" style={{ marginBottom: '1.5rem', textAlign: 'left' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.5rem', fontWeight: '600' }}>
-              Password Requirements:
-            </span>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: requirements.minChar ? 'var(--success)' : 'var(--text-muted)' }}>
-                {requirements.minChar ? <Check size={14} weight="bold" /> : <X size={14} weight="bold" color="var(--error)" />}
-                <span>Minimum 8 Characters</span>
-              </li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: requirements.uppercase ? 'var(--success)' : 'var(--text-muted)' }}>
-                {requirements.uppercase ? <Check size={14} weight="bold" /> : <X size={14} weight="bold" color="var(--error)" />}
-                <span>At least 1 Uppercase Letter</span>
-              </li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: requirements.lowercase ? 'var(--success)' : 'var(--text-muted)' }}>
-                {requirements.lowercase ? <Check size={14} weight="bold" /> : <X size={14} weight="bold" color="var(--error)" />}
-                <span>At least 1 Lowercase Letter</span>
-              </li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: requirements.number ? 'var(--success)' : 'var(--text-muted)' }}>
-                {requirements.number ? <Check size={14} weight="bold" /> : <X size={14} weight="bold" color="var(--error)" />}
-                <span>At least 1 Number</span>
-              </li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: requirements.specialChar ? 'var(--success)' : 'var(--text-muted)' }}>
-                {requirements.specialChar ? <Check size={14} weight="bold" /> : <X size={14} weight="bold" color="var(--error)" />}
-                <span>At least 1 Special Character</span>
-              </li>
+          <div className="password-requirements" aria-label="Password requirements">
+            <span className="password-requirements-title">Password requirements</span>
+            <ul>
+              {requirementItems.map(([key, label]) => (
+                <li key={key} className={requirements[key] ? 'met' : ''}>
+                  {requirements[key]
+                    ? <Check size={14} weight="bold" />
+                    : <X size={14} weight="bold" />}
+                  <span>{label}</span>
+                </li>
+              ))}
             </ul>
           </div>
 
           <button type="submit" className="btn-primary btn-full" disabled={loading || !isAllMet}>
-            {loading ? 'Updating...' : 'Reset Password'}
+            {loading ? 'Updating...' : 'Reset password'}
           </button>
         </form>
         <p className="auth-switch">
-          Nevermind, I remembered! <Link to="/login">Back to Login</Link>
+          Remembered your password? <Link to="/login">Back to login</Link>
         </p>
       </div>
     </section>

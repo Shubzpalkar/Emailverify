@@ -30,7 +30,7 @@ export default function Analytics() {
       {/* Header */}
       <div className="analytics-header">
         <div>
-          <h2>Enterprise Analytics & Business Intelligence Center</h2>
+          <h1>Analytics & intelligence</h1>
           <p>Real-time data quality ratios, domain/provider intelligence & performance metrics.</p>
         </div>
       </div>

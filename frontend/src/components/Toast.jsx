@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback } from 'react';
-import { CheckCircle, WarningCircle } from '@phosphor-icons/react';
+import { CheckCircle, Info, WarningCircle } from '@phosphor-icons/react';
 import './Toast.css';
 
 const ToastContext = createContext(null);
@@ -20,12 +20,18 @@ export function ToastProvider({ children }) {
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <div className="toast-container">
+      <div className="toast-container" role="region" aria-label="Notifications" aria-live="polite" aria-relevant="additions">
         {toasts.map(toast => (
-          <div key={toast.id} className={`toast toast-${toast.type}`}>
+          <div
+            key={toast.id}
+            className={`toast toast-${toast.type}`}
+            role={toast.type === 'error' ? 'alert' : 'status'}
+          >
             <span>{toast.message}</span>
             {toast.type === 'error' ? (
               <WarningCircle size={20} weight="fill" />
+            ) : toast.type === 'info' ? (
+              <Info size={20} weight="fill" />
             ) : (
               <CheckCircle size={20} weight="fill" />
             )}

@@ -27,24 +27,26 @@ export default function ForgotPassword() {
   return (
     <section className="auth-container page-enter">
       <div className="glass-card auth-card">
-        <h2>Reset your password</h2>
+        <div className="auth-eyebrow">Account recovery</div>
+        <h1>Reset your password</h1>
         {submitted ? (
           <div className="success-state">
             <p>If that email is registered, you will receive a reset link shortly.</p>
             <p className="subtext">Please check your inbox and spam folder.</p>
-            <Link to="/login" className="btn-primary btn-full" style={{ textAlign: 'center', marginTop: '1.5rem', display: 'block' }}>
+            <Link to="/login" className="btn-primary btn-full auth-return-action">
               Return to Login
             </Link>
           </div>
         ) : (
           <>
             <p>Enter your email address and we'll send you a link to reset your password.</p>
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmit} className="auth-form">
               <div className="input-group">
                 <label htmlFor="forgot-email">Email Address</label>
                 <input
                   id="forgot-email"
                   type="email"
+                  autoComplete="email"
                   placeholder="name@company.com"
                   value={email}
                   onChange={e => setEmail(e.target.value)}

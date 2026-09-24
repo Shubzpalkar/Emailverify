@@ -312,10 +312,10 @@ export default function TeamMembers() {
       {/* Invite Modal */}
       {showInviteModal && (
         <div className="modal-overlay">
-          <div className="modal-content glass-card slide-up">
+          <div className="modal-content glass-card slide-up" role="dialog" aria-modal="true" aria-label="Team member dialog">
             <div className="modal-header">
               <h3>Invite Team Member</h3>
-              <button className="close-btn" onClick={() => setShowInviteModal(false)}><X size={20} /></button>
+              <button className="close-btn" onClick={() => setShowInviteModal(false)} aria-label="Close invite dialog"><X size={20} /></button>
             </div>
             <form onSubmit={handleInviteSubmit} className="modal-form">
               <div className="form-group">
@@ -345,10 +345,10 @@ export default function TeamMembers() {
       {/* Edit Modal */}
       {showEditModal && selectedMember && (
         <div className="modal-overlay">
-          <div className="modal-content glass-card slide-up">
+          <div className="modal-content glass-card slide-up" role="dialog" aria-modal="true" aria-label="Team member dialog">
             <div className="modal-header">
               <h3>Edit {selectedMember.display_name || selectedMember.email}</h3>
-              <button className="close-btn" onClick={() => setShowEditModal(false)}><X size={20} /></button>
+              <button className="close-btn" onClick={() => setShowEditModal(false)} aria-label="Close edit dialog"><X size={20} /></button>
             </div>
             <form onSubmit={handleEditSubmit} className="modal-form">
               <div className="form-group">

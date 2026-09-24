@@ -49,7 +49,7 @@ export default function Settings() {
 
   return (
     <div className="glass-card" style={{ padding: '2rem' }}>
-      <h2 style={{ marginBottom: '1.5rem' }}>Account Settings</h2>
+      <h1 style={{ marginBottom: '1.5rem' }}>Account Settings</h1>
       
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '500px' }}>
         <div className="form-group">

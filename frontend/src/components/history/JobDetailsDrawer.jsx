@@ -81,37 +81,37 @@ export default function JobDetailsDrawer({ jobId, onClose, onRefreshList, canMan
 
   return (
     <div className="drawer-backdrop">
-      <div className="drawer-card page-enter">
+      <div className="drawer-card page-enter" role="dialog" aria-modal="true" aria-labelledby="job-drawer-title">
         <div className="drawer-header">
           <div>
-            <h3>Job Details & Diagnostics</h3>
+            <h3 id="job-drawer-title">Job Details & Diagnostics</h3>
             <span className="drawer-job-id">{jobId}</span>
           </div>
-          <button className="btn-icon" onClick={onClose}>
+          <button className="btn-icon" onClick={onClose} aria-label="Close job details">
             <X size={20} />
           </button>
         </div>
 
         {/* Tab Selection */}
-        <div className="drawer-tabs">
-          <button className={`drawer-tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
+        <div className="drawer-tabs" role="tablist" aria-label="Job detail sections">
+          <button role="tab" aria-selected={activeTab === 'overview'} className={`drawer-tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
             Overview
           </button>
-          <button className={`drawer-tab ${activeTab === 'statistics' ? 'active' : ''}`} onClick={() => setActiveTab('statistics')}>
+          <button role="tab" aria-selected={activeTab === 'statistics'} className={`drawer-tab ${activeTab === 'statistics' ? 'active' : ''}`} onClick={() => setActiveTab('statistics')}>
             Statistics
           </button>
-          <button className={`drawer-tab ${activeTab === 'timeline' ? 'active' : ''}`} onClick={() => setActiveTab('timeline')}>
+          <button role="tab" aria-selected={activeTab === 'timeline'} className={`drawer-tab ${activeTab === 'timeline' ? 'active' : ''}`} onClick={() => setActiveTab('timeline')}>
             Timeline
           </button>
-          <button className={`drawer-tab ${activeTab === 'diagnostics' ? 'active' : ''}`} onClick={() => setActiveTab('diagnostics')}>
+          <button role="tab" aria-selected={activeTab === 'diagnostics'} className={`drawer-tab ${activeTab === 'diagnostics' ? 'active' : ''}`} onClick={() => setActiveTab('diagnostics')}>
             Diagnostics
           </button>
-          <button className={`drawer-tab ${activeTab === 'downloads' ? 'active' : ''}`} onClick={() => setActiveTab('downloads')}>
+          <button role="tab" aria-selected={activeTab === 'downloads'} className={`drawer-tab ${activeTab === 'downloads' ? 'active' : ''}`} onClick={() => setActiveTab('downloads')}>
             Downloads
           </button>
         </div>
 
-        <div className="drawer-body">
+        <div className="drawer-body" role="tabpanel" aria-label={`${activeTab} job details`}>
           {loading ? (
             <div className="widget-skeleton" style={{ padding: '2rem' }}>
               <div className="skeleton-line full" />

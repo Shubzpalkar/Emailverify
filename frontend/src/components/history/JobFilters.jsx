@@ -20,6 +20,7 @@ export default function JobFilters({
           <input
             type="text"
             className="form-input search-input"
+            aria-label="Search verification jobs"
             placeholder="Search by Job ID, File Name, User or Workspace..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -30,6 +31,7 @@ export default function JobFilters({
           {/* Status Filter */}
           <select
             className="form-select filter-select"
+            aria-label="Filter by job status"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
           >
@@ -45,6 +47,7 @@ export default function JobFilters({
           {/* Date Filter */}
           <select
             className="form-select filter-select"
+            aria-label="Filter by date"
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value)}
           >
@@ -58,6 +61,7 @@ export default function JobFilters({
           {/* Result Category Filter */}
           <select
             className="form-select filter-select"
+            aria-label="Filter by result category"
             value={resultFilter}
             onChange={(e) => setResultFilter(e.target.value)}
           >
@@ -72,6 +76,7 @@ export default function JobFilters({
           {/* Sort By */}
           <select
             className="form-select filter-select"
+            aria-label="Sort verification jobs"
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
           >
@@ -82,7 +87,7 @@ export default function JobFilters({
             <option value="duration">Sort: Duration</option>
           </select>
 
-          <button className="btn-secondary btn-small" onClick={onRefresh} title="Refresh jobs list">
+          <button className="btn-secondary btn-small" onClick={onRefresh} title="Refresh jobs list" aria-label="Refresh jobs list">
             <ArrowClockwise size={16} />
           </button>
         </div>

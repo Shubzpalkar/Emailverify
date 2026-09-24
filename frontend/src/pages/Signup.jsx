@@ -43,14 +43,16 @@ export default function Signup() {
   return (
     <section className="auth-container page-enter">
       <div className="glass-card auth-card">
-        <h2>Create an account</h2>
+        <div className="auth-eyebrow">Start with 100 free credits</div>
+        <h1>Create an account</h1>
         <p>Get 100 free credits to start verifying.</p>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} className="auth-form">
           <div className="input-group">
             <label htmlFor="signup-email">Email Address</label>
             <input
               id="signup-email"
               type="email"
+              autoComplete="email"
               placeholder="name@company.com"
               value={email}
               onChange={e => setEmail(e.target.value)}
@@ -62,12 +64,15 @@ export default function Signup() {
             <input
               id="signup-password"
               type="password"
+              autoComplete="new-password"
               placeholder="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
               required
               minLength={6}
+              aria-describedby="signup-password-hint"
             />
+            <span id="signup-password-hint" className="input-hint">Use at least 6 characters.</span>
           </div>
           <button type="submit" className="btn-primary btn-full" disabled={loading || googleLoading}>
             {loading ? 'Processing...' : 'Sign Up'}

@@ -75,9 +75,12 @@ export default function AcceptInvite() {
 
   if (loading) {
     return (
-      <div className="auth-container">
+      <div className="auth-container page-enter">
         <div className="auth-card glass-card">
-          <div className="text-center p-4">Validating invitation...</div>
+          <div className="auth-loading" role="status" aria-live="polite">
+            <span className="auth-loading-spinner" aria-hidden="true" />
+            <span>Validating your invitation...</span>
+          </div>
         </div>
       </div>
     );
@@ -85,15 +88,17 @@ export default function AcceptInvite() {
 
   if (error && !inviteData) {
     return (
-      <div className="auth-container">
-        <div className="auth-card glass-card fade-in">
-          <div className="auth-header text-center">
-            <WarningCircle size={48} color="var(--danger-color)" className="mx-auto mb-4" />
-            <h2>Invalid Invitation</h2>
-            <p className="text-secondary">{error}</p>
+      <div className="auth-container page-enter">
+        <div className="auth-card glass-card">
+          <div className="auth-icon-wrapper auth-icon-error" aria-hidden="true">
+            <WarningCircle size={30} weight="duotone" />
+          </div>
+          <div className="auth-header">
+            <h1>Invalid invitation</h1>
+            <p>{error}</p>
           </div>
           <div className="mt-6 text-center">
-            <Link to="/login" className="btn-primary" style={{ display: 'inline-block' }}>Go to Login</Link>
+            <Link to="/login" className="btn-primary btn-full auth-return-action">Go to login</Link>
           </div>
         </div>
       </div>
@@ -101,38 +106,42 @@ export default function AcceptInvite() {
   }
 
   return (
-    <div className="auth-container">
-      <div className="auth-card glass-card slide-up">
-        <div className="auth-header text-center">
-          <div className="auth-icon-wrapper mx-auto mb-4" style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(76, 175, 80, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <EnvelopeSimple size={32} color="var(--success-color)" />
-          </div>
-          <h2>Join {inviteData.workspace_name}</h2>
-          <p className="text-secondary">
-            You've been invited to join as a <strong>{inviteData.role}</strong>.
+    <div className="auth-container page-enter">
+      <div className="auth-card glass-card">
+        <div className="auth-icon-wrapper auth-icon-success" aria-hidden="true">
+          <EnvelopeSimple size={30} weight="duotone" />
+        </div>
+        <div className="auth-header">
+          <div className="auth-eyebrow">Workspace invitation</div>
+          <h1>Join {inviteData.workspace_name}</h1>
+          <p>
+            You have been invited to join as a <strong>{inviteData.role}</strong>.
           </p>
         </div>
 
-        {error && <div className="error-alert mt-4">{error}</div>}
+        {error && <div className="error-alert" role="alert">{error}</div>}
 
         <form onSubmit={handleSubmit} className="auth-form mt-6">
           <div className="form-group">
-            <label>Email Address</label>
-            <input type="email" value={inviteData.email} disabled className="disabled-input" />
+            <label htmlFor="invite-email">Email address</label>
+            <input id="invite-email" type="email" autoComplete="email" value={inviteData.email} disabled className="disabled-input" />
           </div>
-          
+
           <div className="form-group">
-            <label>{inviteData.user_exists ? 'Enter your password' : 'Create a Password'}</label>
-            <input 
-              type="password" 
-              required 
+            <label htmlFor="invite-password">{inviteData.user_exists ? 'Enter your password' : 'Create a password'}</label>
+            <input
+              id="invite-password"
+              type="password"
+              autoComplete={inviteData.user_exists ? 'current-password' : 'new-password'}
+              required
+              minLength={inviteData.user_exists ? undefined : 6}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder={inviteData.user_exists ? "Password" : "At least 6 characters"}
             />
           </div>
 
-          <button type="submit" className="btn-primary w-full mt-2" disabled={submitting}>
+          <button type="submit" className="btn-primary btn-full" disabled={submitting}>
             {submitting ? 'Processing...' : (inviteData.user_exists ? 'Log in & Accept' : 'Create Account & Accept')}
           </button>
         </form>

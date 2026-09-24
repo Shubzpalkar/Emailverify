@@ -6,7 +6,7 @@ export default function BillingSummary() {
   
   return (
     <div className="glass-card" style={{ padding: '2rem' }}>
-      <h2 style={{ marginBottom: '1.5rem' }}>Billing Summary</h2>
+      <h1 style={{ marginBottom: '1.5rem' }}>Billing Summary</h1>
       
       <div style={{ display: 'grid', gap: '1.5rem', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))' }}>
         <div className="stat-card" style={{ padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '8px' }}>

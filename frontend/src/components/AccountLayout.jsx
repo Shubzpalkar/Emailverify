@@ -13,7 +13,7 @@ export default function AccountLayout() {
     <div className="container page-enter account-layout-wrapper">
       <div className="account-sidebar glass-card">
         <h3>Account Center</h3>
-        <nav className="account-nav">
+        <nav className="account-nav" aria-label="Account navigation">
           <NavLink to="/account/profile" className={({isActive}) => isActive ? "account-nav-link active" : "account-nav-link"}>
             <UserCircle size={20} /> Profile
           </NavLink>

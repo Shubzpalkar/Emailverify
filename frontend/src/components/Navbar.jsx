@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from './Toast';
 import './Navbar.css';
 
+const LANDING_SECTIONS = ['home', 'features', 'how-it-works', 'pricing', 'testimonials', 'faq'];
+
 export default function Navbar() {
   const { user, logout } = useAuth();
   const { showToast } = useToast();
@@ -13,8 +15,6 @@ export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('home');
-
-  const sections = ['home', 'features', 'how-it-works', 'pricing-preview', 'api-section', 'security', 'testimonials', 'faq'];
 
   useEffect(() => {
     const handleScroll = () => {
@@ -30,7 +30,7 @@ export default function Navbar() {
           return;
         }
 
-        for (const sectionId of sections) {
+        for (const sectionId of LANDING_SECTIONS) {
           const el = document.getElementById(sectionId);
           if (el) {
             const top = el.offsetTop;
@@ -46,6 +46,23 @@ export default function Navbar() {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setMobileMenuOpen(false);
+    };
+
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [mobileMenuOpen]);
 
   const handleLogout = async () => {
     try {
@@ -64,7 +81,7 @@ export default function Navbar() {
       e.preventDefault();
       const element = document.getElementById(sectionId);
       if (element) {
-        const offset = 80;
+        const offset = 92;
         const bodyRect = document.body.getBoundingClientRect().top;
         const elementRect = element.getBoundingClientRect().top;
         const elementPosition = elementRect - bodyRect;
@@ -84,11 +101,19 @@ export default function Navbar() {
   };
 
   const isPublicPage = location.pathname === '/' || location.pathname === '/pricing';
+  const isAuthPage = [
+    '/login',
+    '/signup',
+    '/forgot-password',
+    '/reset-password',
+    '/verify-email',
+    '/accept-invite',
+  ].includes(location.pathname);
 
   return (
-    <nav className={`navbar ${scrolled ? 'navbar-scrolled' : ''} ${mobileMenuOpen ? 'navbar-open' : ''}`} aria-label="Main Navigation">
+    <nav className={`navbar ${scrolled ? 'navbar-scrolled' : ''} ${mobileMenuOpen ? 'navbar-open' : ''} ${isAuthPage ? 'navbar-auth-mode' : ''} ${user && !isPublicPage ? 'navbar-app-mode' : ''}`} aria-label="Main Navigation">
       <div className="nav-container">
-        <Link to="/" className="nav-brand" aria-label="EmailVerif Home">
+        <Link to="/" className="nav-brand" aria-label="EmailVerif Home" onClick={() => setMobileMenuOpen(false)}>
           <EnvelopeSimpleOpen size={28} weight="fill" color="var(--primary)" />
           <span>EmailVerif</span>
         </Link>
@@ -122,19 +147,12 @@ export default function Navbar() {
             >
               Pricing
             </Link>
-            <Link 
-              to="/#api-section" 
-              onClick={(e) => handleSectionClick(e, 'api-section')} 
-              className={`nav-link ${location.pathname === '/' && activeSection === 'api-section' ? 'active' : ''}`}
+            <Link
+              to="/#testimonials"
+              onClick={(e) => handleSectionClick(e, 'testimonials')}
+              className={`nav-link ${location.pathname === '/' && activeSection === 'testimonials' ? 'active' : ''}`}
             >
-              API
-            </Link>
-            <Link 
-              to="/#api-section" 
-              onClick={(e) => handleSectionClick(e, 'api-section')} 
-              className={`nav-link ${location.pathname === '/' && activeSection === 'api-section' ? 'active' : ''}`}
-            >
-              Documentation
+              Customers
             </Link>
             <Link 
               to="/#faq" 
@@ -187,14 +205,16 @@ export default function Navbar() {
         </div>
 
         {/* Mobile Hamburger Toggle for both public and app pages */}
-        <button 
-          className="mobile-nav-toggle" 
-          onClick={toggleMobileMenu} 
-          aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
-          aria-expanded={mobileMenuOpen}
-        >
-          {mobileMenuOpen ? <X size={26} /> : <List size={26} />}
-        </button>
+        {!isAuthPage && (
+          <button
+            className="mobile-nav-toggle"
+            onClick={toggleMobileMenu}
+            aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={mobileMenuOpen}
+          >
+            {mobileMenuOpen ? <X size={26} /> : <List size={26} />}
+          </button>
+        )}
       </div>
 
       {/* Mobile Drawer Menu */}
@@ -207,8 +227,7 @@ export default function Navbar() {
                 <Link to="/#features" onClick={(e) => handleSectionClick(e, 'features')} className="mobile-nav-link">Features</Link>
                 <Link to="/#how-it-works" onClick={(e) => handleSectionClick(e, 'how-it-works')} className="mobile-nav-link">How It Works</Link>
                 <Link to="/pricing" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">Pricing</Link>
-                <Link to="/#api-section" onClick={(e) => handleSectionClick(e, 'api-section')} className="mobile-nav-link">API</Link>
-                <Link to="/#api-section" onClick={(e) => handleSectionClick(e, 'api-section')} className="mobile-nav-link">Documentation</Link>
+                <Link to="/#testimonials" onClick={(e) => handleSectionClick(e, 'testimonials')} className="mobile-nav-link">Customers</Link>
                 <Link to="/#faq" onClick={(e) => handleSectionClick(e, 'faq')} className="mobile-nav-link">FAQ</Link>
                 <div className="mobile-drawer-auth">
                   {user ? (

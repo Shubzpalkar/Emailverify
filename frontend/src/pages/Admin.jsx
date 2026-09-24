@@ -94,7 +94,7 @@ export default function Admin() {
   return (
     <section className="container page-enter" style={{ paddingTop: '1rem' }}>
       <div className="dashboard-header" style={{ marginTop: '2rem', marginBottom: '1rem' }}>
-        <h2>Admin Panel — My Users</h2>
+        <h1>Admin Panel — My Users</h1>
       </div>
 
       {dashboard && (
@@ -231,8 +231,8 @@ export default function Admin() {
 
       {showUserModal && (
         <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="glass-card page-enter" style={{ minWidth: '400px' }}>
-            <h2>Create New Scoped User</h2>
+          <div className="glass-card page-enter" style={{ minWidth: '400px' }} role="dialog" aria-modal="true" aria-labelledby="create-user-title">
+            <h2 id="create-user-title">Create New Scoped User</h2>
             <form onSubmit={handleCreateUser}>
               <div style={{ marginBottom: '1rem', marginTop: '1rem' }}>
                 <label style={{ display: 'block', marginBottom: '0.5rem' }}>Email</label>

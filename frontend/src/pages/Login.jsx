@@ -63,14 +63,16 @@ export default function Login() {
   return (
     <section className="auth-container page-enter">
       <div className="glass-card auth-card">
-        <h2>Welcome back</h2>
+        <div className="auth-eyebrow">Secure account access</div>
+        <h1>Welcome back</h1>
         <p>Enter your details to access your dashboard.</p>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} className="auth-form">
           <div className="input-group">
             <label htmlFor="login-email">Email Address</label>
             <input
               id="login-email"
               type="email"
+              autoComplete="email"
               placeholder="name@company.com"
               value={email}
               onChange={e => setEmail(e.target.value)}
@@ -82,6 +84,7 @@ export default function Login() {
             <input
               id="login-password"
               type="password"
+              autoComplete="current-password"
               placeholder="password"
               value={password}
               onChange={e => setPassword(e.target.value)}

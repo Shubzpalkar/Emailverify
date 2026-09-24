@@ -90,6 +90,8 @@ export default function Pricing() {
         <p className="subtitle">Choose the perfect plan for your cold email campaigns and newsletter list cleaning.</p>
       </div>
 
+      <h2 className="sr-only">Available plans</h2>
+
       {/* Pricing Cards Grid */}
       <section className="pricing-grid container">
         {plans.map((plan, idx) => (
@@ -137,11 +139,21 @@ export default function Pricing() {
         <div className="faq-list">
           {faqs.map((faq, idx) => (
             <div key={idx} className="faq-item glass-card">
-              <button className="faq-question" onClick={() => toggleFaq(idx)}>
+              <button
+                className="faq-question"
+                onClick={() => toggleFaq(idx)}
+                aria-expanded={activeFaq === idx}
+                aria-controls={`pricing-faq-answer-${idx}`}
+              >
                 <span>{faq.q}</span>
-                <span className={`faq-icon ${activeFaq === idx ? 'open' : ''}`}>+</span>
+                <span className={`faq-icon ${activeFaq === idx ? 'open' : ''}`} aria-hidden="true">+</span>
               </button>
-              <div className={`faq-answer ${activeFaq === idx ? 'show' : ''}`}>
+              <div
+                id={`pricing-faq-answer-${idx}`}
+                className={`faq-answer ${activeFaq === idx ? 'show' : ''}`}
+                role="region"
+                aria-hidden={activeFaq !== idx}
+              >
                 <p>{faq.a}</p>
               </div>
             </div>

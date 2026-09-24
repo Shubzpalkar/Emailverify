@@ -178,9 +178,15 @@ export default function DownloadModal({ job, onClose }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" onClick={e => e.stopPropagation()}>
+      <div
+        className="modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="download-modal-title"
+        onClick={e => e.stopPropagation()}
+      >
         <div className="modal-header">
-          <h3 className="modal-title">Download results</h3>
+          <h3 id="download-modal-title" className="modal-title">Download results</h3>
           <button className="modal-close" onClick={onClose} aria-label="Close">
             <X size={20} />
           </button>
@@ -200,6 +206,7 @@ export default function DownloadModal({ job, onClose }) {
                   style={{ '--chip-color': color }}
                   onClick={() => toggleStatus(key)}
                   disabled={count === 0}
+                  aria-pressed={isSelected}
                 >
                   <span className="chip-dot" />
                   {label}

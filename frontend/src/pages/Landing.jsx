@@ -388,7 +388,7 @@ export default function Landing() {
           )}
 
           {demoState === 'checking' && (
-            <div className="demo-loading">
+            <div className="demo-loading" role="status" aria-live="polite">
               <div className="spinner"></div>
               <p className="loading-step">Current Step: <strong>{demoSteps[demoStep].title}</strong></p>
               <span className="step-desc">{demoSteps[demoStep].desc}</span>
@@ -402,7 +402,14 @@ export default function Landing() {
                   </div>
                 ))}
               </div>
-              <div className="progress-bar">
+              <div
+                className="progress-bar"
+                role="progressbar"
+                aria-label="Verification progress"
+                aria-valuemin="0"
+                aria-valuemax={demoSteps.length}
+                aria-valuenow={demoStep + 1}
+              >
                 <div className="progress" style={{ width: `${((demoStep + 1) / demoSteps.length) * 100}%` }}></div>
               </div>
             </div>
@@ -679,7 +686,7 @@ export default function Landing() {
       <section id="faq" className="faq-section container animate-on-scroll">
         <div className="faq-header text-center">
           <span className="badge">Got Questions?</span>
-          <h2>FAQ Accordion</h2>
+          <h2>Questions, answered</h2>
           <p>Answers to common queries regarding security, accuracy, and credits.</p>
         </div>
         <div className="faq-list">
@@ -710,7 +717,12 @@ export default function Landing() {
                 <span>{faq.q}</span>
                 <span className={`faq-icon ${activeFaq === idx ? 'open' : ''}`}>+</span>
               </button>
-              <div id={`faq-answer-${idx}`} className={`faq-answer ${activeFaq === idx ? 'show' : ''}`} role="region">
+              <div
+                id={`faq-answer-${idx}`}
+                className={`faq-answer ${activeFaq === idx ? 'show' : ''}`}
+                role="region"
+                aria-hidden={activeFaq !== idx}
+              >
                 <p>{faq.a}</p>
               </div>
             </div>
@@ -765,24 +777,23 @@ export default function Landing() {
           
           <div className="footer-links-col">
             <h4>Developers</h4>
-            <Link to="/#features">Documentation</Link>
-            <a href="#release-notes">Release Notes</a>
+            <Link to="/#features">Verification Features</Link>
             <Link to="/settings/keys">API Keys</Link>
+            <a href="mailto:sales@emailverif.com">Developer Support</a>
           </div>
           
           <div className="footer-links-col">
-            <h4>Company</h4>
-            <Link to="/#testimonials">Blog</Link>
-            <a href="mailto:support@emailverif.com">Contact</a>
-            <Link to="/#faq">FAQ</Link>
+            <h4>Resources</h4>
+            <Link to="/#testimonials">Customer Stories</Link>
+            <a href="https://status.emailverif.com" target="_blank" rel="noreferrer">Service Status</a>
+            <a href="mailto:support@emailverif.com">Contact Support</a>
           </div>
-          
+
           <div className="footer-links-col">
-            <h4>Legal</h4>
-            <Link to="/privacy">Privacy Policy</Link>
-            <Link to="/terms">Terms of Service</Link>
-            <Link to="/refund">Refund Policy</Link>
-            <Link to="/cookies">Cookie Policy</Link>
+            <h4>Get Started</h4>
+            <Link to="/signup">Create Account</Link>
+            <Link to="/pricing">View Pricing</Link>
+            <Link to="/#faq">Read FAQ</Link>
           </div>
         </div>
       </footer>

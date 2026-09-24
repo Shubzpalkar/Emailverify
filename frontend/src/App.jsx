@@ -42,8 +42,9 @@ function GuestRoute({ children }) {
   const { user, firebaseUser, loading } = useAuth();
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 'calc(100vh - 70px)' }}>
-        <div style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>Loading Auth...</div>
+      <div className="app-loading-state" role="status" aria-live="polite">
+        <span className="app-loading-spinner" aria-hidden="true" />
+        <span>Loading your workspace...</span>
       </div>
     );
   }
@@ -59,8 +60,9 @@ export default function App() {
 
   return (
     <PermissionProvider>
+      <a className="skip-link" href="#main-content">Skip to main content</a>
       <Navbar />
-      <main style={{ paddingTop: '75px' }}>
+      <main id="main-content" className="app-main" tabIndex="-1">
         <Routes>
           {/* Public routes */}
           <Route path="/" element={<Landing />} />

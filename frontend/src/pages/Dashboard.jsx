@@ -15,6 +15,14 @@ import './Dashboard.css';
 export default function Dashboard() {
   return (
     <div className="dashboard-container page-enter">
+      <header className="dashboard-header">
+        <div>
+          <span className="badge">Workspace overview</span>
+          <h1>Verification command center</h1>
+          <p>Monitor deliverability, credits, jobs, and system performance in one place.</p>
+        </div>
+      </header>
+
       <div className="dashboard-grid">
         {/* Row 1: Welcome Header & Quick Actions */}
         <div className="col-8">

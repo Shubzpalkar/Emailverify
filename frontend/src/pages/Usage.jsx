@@ -33,7 +33,7 @@ export default function Usage() {
 
   return (
     <div className="glass-card" style={{ padding: '2rem' }}>
-      <h2 style={{ marginBottom: '1.5rem' }}>Usage Summary</h2>
+      <h1 style={{ marginBottom: '1.5rem' }}>Usage Summary</h1>
       
       <div style={{ display: 'grid', gap: '1.5rem', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
         <div className="stat-card" style={{ padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '8px' }}>

@@ -26,7 +26,7 @@ export default function WorkspaceOverview() {
 
   return (
     <div className="glass-card p-8">
-      <h2 className="text-2xl font-bold mb-4">Workspace Overview</h2>
+      <h1 className="text-2xl font-bold mb-4">Workspace Overview</h1>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
         <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">

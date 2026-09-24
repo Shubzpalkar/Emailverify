@@ -172,7 +172,19 @@ export default function Billing() {
         </div>
 
         {/* Credits Remaining Card */}
-        <div className="glass-card metric-card" onClick={() => navigate('/credits')} style={{ cursor: 'pointer' }}>
+        <div
+          className="glass-card metric-card"
+          onClick={() => navigate('/credits')}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              navigate('/credits');
+            }
+          }}
+          role="link"
+          tabIndex="0"
+          style={{ cursor: 'pointer' }}
+        >
           <div className="metric-icon credits-icon">
             <Coins size={28} weight="duotone" />
           </div>
@@ -222,9 +234,9 @@ export default function Billing() {
       {/* Cancel Subscription Confirmation Modal */}
       {showCancelModal && (
         <div className="modal-overlay">
-          <div className="glass-card modal-content text-center">
+          <div className="glass-card modal-content text-center" role="dialog" aria-modal="true" aria-labelledby="cancel-subscription-title">
             <XCircle size={64} className="text-danger mx-auto" />
-            <h3 className="mt-4">Cancel Subscription</h3>
+            <h3 id="cancel-subscription-title" className="mt-4">Cancel Subscription</h3>
             <p className="text-muted mt-2">
               Are you sure you want to cancel your auto renewal? You will retain access to your plan and credit balance until the end of the current billing cycle.
             </p>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { EnvelopeOpen } from '@phosphor-icons/react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import './Auth.css';
@@ -48,8 +49,14 @@ export default function VerifyEmail() {
   return (
     <section className="auth-container page-enter">
       <div className="glass-card auth-card">
-        <h2>Verify your email</h2>
-        <p>Open the verification link sent to {firebaseUser?.email || 'your email address'}, then continue to your dashboard.</p>
+        <div className="auth-icon-wrapper auth-icon-success" aria-hidden="true">
+          <EnvelopeOpen size={30} weight="duotone" />
+        </div>
+        <div className="auth-header">
+          <div className="auth-eyebrow">One final step</div>
+          <h1>Verify your email</h1>
+          <p>We sent a verification link to <strong>{firebaseUser?.email || 'your email address'}</strong>. Open it, then continue to your dashboard.</p>
+        </div>
         <div className="auth-actions">
           <button type="button" className="btn-primary btn-full" onClick={handleContinue} disabled={checking}>
             {checking ? 'Checking...' : 'I verified my email'}
@@ -60,8 +67,7 @@ export default function VerifyEmail() {
         </div>
         <p className="auth-switch">
           Wrong account? <button type="button" className="link-button" onClick={logout}>Log out</button>
-        </p>
-        <p className="auth-switch">
+          {' · '}
           <Link to="/login">Back to login</Link>
         </p>
       </div>

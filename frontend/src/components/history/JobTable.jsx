@@ -1,4 +1,4 @@
-import { ArrowCircleDown, StopCircle, ArrowClockwise, Archive, Trash, Eye } from '@phosphor-icons/react';
+import { ArrowCircleDown, StopCircle, ArrowClockwise, Archive, Trash, Eye, ListChecks } from '@phosphor-icons/react';
 
 export default function JobTable({
   jobs,
