@@ -73,12 +73,15 @@ def map_smtp_response(code: int, message: str) -> Tuple[str, str]:
 
     # Permanent Failures (550, 551, 552, 553, 554)
     if code == 550:
-        if any(term in msg_lower for term in ["spam", "block", "blackhole", "rbl", "reputation", "policy", "denied", "barracuda", "proofpoint", "mimecast", "dmarc", "spf", "dkim", "relay", "rejected"]):
-            return "Protected", f"SMTP verification blocked by recipient anti-spam/security policy ({message})"
+        # Check explicit recipient non-existence indicators first
+        if any(term in msg_lower for term in ["user unknown", "no such user", "does not exist", "mailbox unavailable", "invalid recipient", "recipient unknown", "mailbox not found", "not found", "no such", "5.1.1", "bad destination"]):
+            return "Undeliverable", f"Mailbox does not exist (550 User unknown): {message}"
         if any(term in msg_lower for term in ["disabled", "inactive", "suspended", "closed"]):
             return "Disabled", "Recipient mailbox is disabled or suspended"
-        if any(term in msg_lower for term in ["no such", "not found", "does not exist", "unknown", "invalid", "unreachable", "recipient", "user"]):
-            return "Undeliverable", f"Mailbox does not exist (550 User unknown)"
+        if any(term in msg_lower for term in ["spam", "blackhole", "rbl", "reputation", "policy", "barracuda", "proofpoint", "mimecast", "dmarc", "spf", "dkim", "relay access", "relay denied", "blocked by", "client host blocked", "access denied"]):
+            return "Protected", f"SMTP verification blocked by recipient anti-spam/security policy ({message})"
+        if any(term in msg_lower for term in ["unknown", "invalid", "unreachable", "recipient", "user", "address rejected"]):
+            return "Undeliverable", f"Mailbox rejected (550): {message}"
         return "Undeliverable", f"Recipient rejected by target server (550): {message}"
     if code == 551:
         return "Undeliverable", "User not local; please try forwarding path"
@@ -87,7 +90,7 @@ def map_smtp_response(code: int, message: str) -> Tuple[str, str]:
     if code == 553:
         return "Undeliverable", "Requested action not taken: mailbox name invalid"
     if code == 554:
-        if any(term in msg_lower for term in ["no such", "unknown", "not found", "does not exist"]):
+        if any(term in msg_lower for term in ["user unknown", "no such", "unknown", "not found", "does not exist", "5.1.1"]):
             return "Undeliverable", f"Mailbox rejected (554): {message}"
         return "Protected", f"Transaction failed due to anti-spam policy or security reject: {message}"
 
@@ -104,12 +107,16 @@ def map_smtp_response(code: int, message: str) -> Tuple[str, str]:
 async def connect_and_check_transcript(
     mx_server: str, 
     email: str, 
-    sender_email: str = "test@verifier.local"
+    sender_email: Optional[str] = None,
+    helo_host: Optional[str] = None
 ) -> Tuple[int, str, Dict[str, Any]]:
     """
-    Connect to SMTP server, execute handshake, and record full SMTP Transcript.
+    Connect to SMTP server, execute handshake using configured HELO/MAIL FROM, and record full SMTP Transcript.
     Returns (status_code, response_message, transcript_dict)
     """
+    sender_email = sender_email or settings.SMTP_MAIL_FROM
+    helo_host = helo_host or settings.SMTP_HELO_HOST
+
     start_time = time.perf_counter()
     transcript = {
         "banner": "",
@@ -123,13 +130,23 @@ async def connect_and_check_transcript(
     }
 
     try:
-        smtp = aiosmtplib.SMTP(hostname=mx_server, port=25, timeout=settings.SMTP_CONNECT_TIMEOUT)
+        smtp = aiosmtplib.SMTP(
+            hostname=mx_server, 
+            port=25, 
+            timeout=settings.SMTP_CONNECT_TIMEOUT,
+            local_hostname=helo_host
+        )
         connect_res = await smtp.connect()
         transcript["banner"] = str(connect_res[1]).strip()
 
         # EHLO Handshake
-        ehlo_code, ehlo_msg = await smtp.ehlo(timeout=settings.SMTP_COMMAND_TIMEOUT)
-        transcript["ehlo"] = f"{ehlo_code} {ehlo_msg}"
+        try:
+            ehlo_code, ehlo_msg = await smtp.ehlo(hostname=helo_host, timeout=settings.SMTP_COMMAND_TIMEOUT)
+            transcript["ehlo"] = f"{ehlo_code} {ehlo_msg}"
+        except Exception:
+            helo_code, helo_msg = await smtp.helo(hostname=helo_host, timeout=settings.SMTP_COMMAND_TIMEOUT)
+            transcript["ehlo"] = f"{helo_code} {helo_msg}"
+
         transcript["capabilities"] = list(smtp.esmtp_extensions.keys()) if hasattr(smtp, "esmtp_extensions") else []
         transcript["auth_support"] = "auth" in [c.lower() for c in transcript["capabilities"]]
 
@@ -138,7 +155,11 @@ async def connect_and_check_transcript(
             try:
                 await smtp.starttls(timeout=settings.SMTP_COMMAND_TIMEOUT)
                 transcript["starttls"] = True
-                await smtp.ehlo(timeout=settings.SMTP_COMMAND_TIMEOUT)
+                try:
+                    await smtp.ehlo(hostname=helo_host, timeout=settings.SMTP_COMMAND_TIMEOUT)
+                except Exception:
+                    await smtp.helo(hostname=helo_host, timeout=settings.SMTP_COMMAND_TIMEOUT)
+
                 if hasattr(smtp, "transport") and smtp.transport:
                     ssl_obj = smtp.transport.get_extra_info("ssl_object")
                     if ssl_obj:
@@ -198,21 +219,33 @@ async def connect_and_check_transcript(
         transcript["rtt_ms"] = round(rtt, 2)
         return 0, f"Connection failed: {str(e)}", transcript
 
-async def connect_and_check(mx_server: str, email: str, sender_email: str = "test@verifier.local") -> Tuple[int, str, bool]:
+async def connect_and_check(
+    mx_server: str, 
+    email: str, 
+    sender_email: Optional[str] = None,
+    helo_host: Optional[str] = None
+) -> Tuple[int, str, bool]:
     """
     Backward compatible helper returning (status_code, message, tls_used).
     """
-    code, msg, transcript = await connect_and_check_transcript(mx_server, email, sender_email)
+    code, msg, transcript = await connect_and_check_transcript(mx_server, email, sender_email, helo_host)
     return code, msg, transcript.get("starttls", False)
 
-async def _verify_smtp_inner(mx_server: str, email: str, sender_email: str = "test@verifier.local") -> Dict[str, Any]:
+async def _verify_smtp_inner(
+    mx_server: str, 
+    email: str, 
+    sender_email: Optional[str] = None,
+    helo_host: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Verify email via SMTP with exponential backoff retries for temporary errors.
     Returns structured result dictionary including full SMTP transcript telemetry.
     """
-    delays = settings.RETRY_DELAYS  # e.g. [1, 2, 4]
+    sender_email = sender_email or settings.SMTP_MAIL_FROM
+    helo_host = helo_host or settings.SMTP_HELO_HOST
+    delays = settings.RETRY_DELAYS  # e.g. [1, 2, 4] or [5, 30, 120]
     domain = email.split('@')[1] if '@' in email else "generic"
-    sem = get_domain_semaphore(domain, max_concurrent=5)
+    sem = get_domain_semaphore(domain, max_concurrent=settings.PER_DOMAIN_CONCURRENT)
 
     last_code = 0
     last_msg = ""
@@ -222,7 +255,7 @@ async def _verify_smtp_inner(mx_server: str, email: str, sender_email: str = "te
 
     async with sem:
         for attempt in range(len(delays) + 1):
-            code, msg, transcript = await connect_and_check_transcript(mx_server, email, sender_email)
+            code, msg, transcript = await connect_and_check_transcript(mx_server, email, sender_email, helo_host)
             last_code = code
             last_msg = msg
             last_transcript = transcript
@@ -262,14 +295,21 @@ async def _verify_smtp_inner(mx_server: str, email: str, sender_email: str = "te
         "smtp_transcript": last_transcript
     }
 
-async def verify_smtp_with_retries(mx_server: str, email: str, sender_email: str = "test@verifier.local") -> Dict[str, Any]:
+async def verify_smtp_with_retries(
+    mx_server: str, 
+    email: str, 
+    sender_email: Optional[str] = None,
+    helo_host: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Outer wrapper with hard timeout enforcement.
     Returns structured dictionary with backward compatible 'status' and 'reason'.
     """
+    sender_email = sender_email or settings.SMTP_MAIL_FROM
+    helo_host = helo_host or settings.SMTP_HELO_HOST
     try:
         res = await asyncio.wait_for(
-            _verify_smtp_inner(mx_server, email, sender_email),
+            _verify_smtp_inner(mx_server, email, sender_email, helo_host),
             timeout=settings.SMTP_HARD_TIMEOUT
         )
         return res
@@ -284,24 +324,32 @@ async def verify_smtp_with_retries(mx_server: str, email: str, sender_email: str
             "smtp_transcript": {"banner": "", "ehlo": "", "capabilities": [], "starttls": False, "rtt_ms": 0.0}
         }
 
-async def check_catch_all_detailed(mx_server: str, domain: str) -> Dict[str, Any]:
+async def check_catch_all_detailed(
+    mx_server: str, 
+    domain: str,
+    sender_email: Optional[str] = None,
+    helo_host: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Performs dual-probe catch-all verification using two distinct non-existent addresses.
     If both probes return code 250, domain is confirmed Catch-All.
     """
-    probe1 = f"bounce-probe1-{uuid.uuid4().hex[:8]}@{domain}"
-    probe2 = f"bounce-probe2-{uuid.uuid4().hex[:8]}@{domain}"
+    sender_email = sender_email or settings.SMTP_MAIL_FROM
+    helo_host = helo_host or settings.SMTP_HELO_HOST
 
-    code1, msg1, _ = await connect_and_check(mx_server, probe1)
-    if code1 != 250:
+    probe1 = f"chk-probe1-{uuid.uuid4().hex[:12]}@{domain}"
+    probe2 = f"chk-probe2-{uuid.uuid4().hex[:12]}@{domain}"
+
+    code1, msg1, _ = await connect_and_check(mx_server, probe1, sender_email=sender_email, helo_host=helo_host)
+    if code1 not in (250, 251):
         return {
             "is_catch_all": False,
             "confidence": 0.95,
-            "reason": f"First probe rejected with code {code1}"
+            "reason": f"First random probe rejected with code {code1}: {msg1}"
         }
 
-    code2, msg2, _ = await connect_and_check(mx_server, probe2)
-    if code2 == 250:
+    code2, msg2, _ = await connect_and_check(mx_server, probe2, sender_email=sender_email, helo_host=helo_host)
+    if code2 in (250, 251):
         return {
             "is_catch_all": True,
             "confidence": 0.90,
@@ -311,12 +359,17 @@ async def check_catch_all_detailed(mx_server: str, domain: str) -> Dict[str, Any
         return {
             "is_catch_all": False,
             "confidence": 0.85,
-            "reason": f"Second probe rejected with code {code2}"
+            "reason": f"Second probe rejected with code {code2}: {msg2}"
         }
 
-async def check_catch_all(mx_server: str, domain: str) -> bool:
+async def check_catch_all(
+    mx_server: str, 
+    domain: str,
+    sender_email: Optional[str] = None,
+    helo_host: Optional[str] = None
+) -> bool:
     """
     Checks if the domain is a catch-all for backward compatibility.
     """
-    res = await check_catch_all_detailed(mx_server, domain)
+    res = await check_catch_all_detailed(mx_server, domain, sender_email, helo_host)
     return res["is_catch_all"]

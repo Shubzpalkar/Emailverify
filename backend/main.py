@@ -38,6 +38,8 @@ async def _periodic_flush():
         await _flush_result_buffer(db)
 
 def seed_superadmin_in_firebase():
+    if not settings.SUPERADMIN_PASSWORD:
+        return
     from firebase_admin import auth as firebase_admin_auth
     from database import get_db
     from firebase.firebase import initialize_firebase

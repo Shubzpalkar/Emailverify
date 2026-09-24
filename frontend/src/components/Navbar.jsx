@@ -170,10 +170,15 @@ export default function Navbar() {
                 <Link to="/settings/keys" className={`nav-link ${location.pathname.startsWith('/settings') ? 'active' : ''}`}>API Keys</Link>
                 <Link to="/account/profile" className={`nav-link ${location.pathname.startsWith('/account') ? 'active' : ''}`}>Profile</Link>
                 {user.role === 'superadmin' && (
-                  <Link to="/superadmin" className="nav-link">Superadmin</Link>
+                  <Link to="/superadmin" className={`nav-link ${location.pathname === '/superadmin' ? 'active' : ''}`}>Superadmin</Link>
                 )}
                 {(user.role === 'admin' || user.role === 'superadmin') && (
-                  <Link to="/admin" className="nav-link">Admin Panel</Link>
+                  <Link to="/admin" className={`nav-link ${location.pathname === '/admin' ? 'active' : ''}`}>Admin Panel</Link>
+                )}
+                {(user.credit_pool !== undefined || user.credits !== undefined) && (
+                  <span className="nav-credits-badge" title="Available Verification Credits">
+                    {(user.credit_pool !== undefined ? user.credit_pool : user.credits).toLocaleString()} credits
+                  </span>
                 )}
                 <button className="btn-secondary btn-small" onClick={handleLogout}>Log out</button>
               </>
@@ -181,43 +186,75 @@ export default function Navbar() {
           )}
         </div>
 
-        {/* Mobile Hamburger Toggle */}
-        {isPublicPage && (
-          <button 
-            className="mobile-nav-toggle" 
-            onClick={toggleMobileMenu} 
-            aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
-            aria-expanded={mobileMenuOpen}
-          >
-            {mobileMenuOpen ? <X size={26} /> : <List size={26} />}
-          </button>
-        )}
+        {/* Mobile Hamburger Toggle for both public and app pages */}
+        <button 
+          className="mobile-nav-toggle" 
+          onClick={toggleMobileMenu} 
+          aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={mobileMenuOpen}
+        >
+          {mobileMenuOpen ? <X size={26} /> : <List size={26} />}
+        </button>
       </div>
 
       {/* Mobile Drawer Menu */}
-      {isPublicPage && mobileMenuOpen && (
+      {mobileMenuOpen && (
         <div className="mobile-drawer-menu" role="dialog" aria-modal="true" aria-label="Mobile Navigation Menu">
           <div className="mobile-drawer-links">
-            <Link to="/#home" onClick={(e) => handleSectionClick(e, 'home')} className="mobile-nav-link">Home</Link>
-            <Link to="/#features" onClick={(e) => handleSectionClick(e, 'features')} className="mobile-nav-link">Features</Link>
-            <Link to="/#how-it-works" onClick={(e) => handleSectionClick(e, 'how-it-works')} className="mobile-nav-link">How It Works</Link>
-            <Link to="/pricing" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">Pricing</Link>
-            <Link to="/#api-section" onClick={(e) => handleSectionClick(e, 'api-section')} className="mobile-nav-link">API</Link>
-            <Link to="/#api-section" onClick={(e) => handleSectionClick(e, 'api-section')} className="mobile-nav-link">Documentation</Link>
-            <Link to="/#faq" onClick={(e) => handleSectionClick(e, 'faq')} className="mobile-nav-link">FAQ</Link>
-            <div className="mobile-drawer-auth">
-              {user ? (
+            {isPublicPage ? (
+              <>
+                <Link to="/#home" onClick={(e) => handleSectionClick(e, 'home')} className="mobile-nav-link">Home</Link>
+                <Link to="/#features" onClick={(e) => handleSectionClick(e, 'features')} className="mobile-nav-link">Features</Link>
+                <Link to="/#how-it-works" onClick={(e) => handleSectionClick(e, 'how-it-works')} className="mobile-nav-link">How It Works</Link>
+                <Link to="/pricing" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">Pricing</Link>
+                <Link to="/#api-section" onClick={(e) => handleSectionClick(e, 'api-section')} className="mobile-nav-link">API</Link>
+                <Link to="/#api-section" onClick={(e) => handleSectionClick(e, 'api-section')} className="mobile-nav-link">Documentation</Link>
+                <Link to="/#faq" onClick={(e) => handleSectionClick(e, 'faq')} className="mobile-nav-link">FAQ</Link>
+                <div className="mobile-drawer-auth">
+                  {user ? (
+                    <>
+                      <Link to="/dashboard" onClick={() => setMobileMenuOpen(false)} className="btn-primary btn-full">Dashboard</Link>
+                      <button className="btn-secondary btn-full" onClick={handleLogout}>Log out</button>
+                    </>
+                  ) : (
+                    <>
+                      <Link to="/login" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link text-center" style={{ margin: '0.5rem 0' }}>Log in</Link>
+                      <Link to="/signup" onClick={() => setMobileMenuOpen(false)} className="btn-primary btn-full">Start Free</Link>
+                    </>
+                  )}
+                </div>
+              </>
+            ) : (
+              user && (
                 <>
-                  <Link to="/dashboard" onClick={() => setMobileMenuOpen(false)} className="btn-primary btn-full">Dashboard</Link>
-                  <button className="btn-secondary btn-full" onClick={handleLogout}>Log out</button>
+                  <div className="mobile-user-card">
+                    <span className="mobile-user-email">{user.email}</span>
+                    <span className="mobile-user-badge">{user.role || 'Member'}</span>
+                    {(user.credit_pool !== undefined || user.credits !== undefined) && (
+                      <span className="mobile-credits-count">
+                        {(user.credit_pool !== undefined ? user.credit_pool : user.credits).toLocaleString()} Credits Available
+                      </span>
+                    )}
+                  </div>
+                  <Link to="/dashboard" onClick={() => setMobileMenuOpen(false)} className={`mobile-nav-link ${location.pathname === '/dashboard' ? 'active' : ''}`}>Dashboard</Link>
+                  <Link to="/verify" onClick={() => setMobileMenuOpen(false)} className={`mobile-nav-link ${location.pathname === '/verify' ? 'active' : ''}`}>Verify</Link>
+                  <Link to="/history" onClick={() => setMobileMenuOpen(false)} className={`mobile-nav-link ${location.pathname === '/history' ? 'active' : ''}`}>History</Link>
+                  <Link to="/analytics" onClick={() => setMobileMenuOpen(false)} className={`mobile-nav-link ${location.pathname === '/analytics' ? 'active' : ''}`}>Analytics</Link>
+                  <Link to="/billing" onClick={() => setMobileMenuOpen(false)} className={`mobile-nav-link ${location.pathname.startsWith('/billing') ? 'active' : ''}`}>Billing</Link>
+                  <Link to="/settings/keys" onClick={() => setMobileMenuOpen(false)} className={`mobile-nav-link ${location.pathname.startsWith('/settings') ? 'active' : ''}`}>API Keys</Link>
+                  <Link to="/account/profile" onClick={() => setMobileMenuOpen(false)} className={`mobile-nav-link ${location.pathname.startsWith('/account') ? 'active' : ''}`}>Account Profile</Link>
+                  {user.role === 'superadmin' && (
+                    <Link to="/superadmin" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">Superadmin</Link>
+                  )}
+                  {(user.role === 'admin' || user.role === 'superadmin') && (
+                    <Link to="/admin" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">Admin Panel</Link>
+                  )}
+                  <div style={{ marginTop: '1rem' }}>
+                    <button className="btn-secondary btn-full" onClick={handleLogout}>Log out</button>
+                  </div>
                 </>
-              ) : (
-                <>
-                  <Link to="/login" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link text-center" style={{ margin: '1rem 0' }}>Log in</Link>
-                  <Link to="/signup" onClick={() => setMobileMenuOpen(false)} className="btn-primary btn-full">Start Free</Link>
-                </>
-              )}
-            </div>
+              )
+            )}
           </div>
         </div>
       )}

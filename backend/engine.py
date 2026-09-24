@@ -60,28 +60,71 @@ class EngineMetrics:
 
 engine_metrics = EngineMetrics()
 
-# Strict email syntax validation
+# Strict email syntax validation supporting RFC 5321 / RFC 5322 long TLDs (up to 63 chars)
 EMAIL_REGEX = re.compile(
     r"^(?!\.)(\"([^\"\\]|\\[\"\\])*\"|[-a-zA-Z0-9!#$%&'*+/=?^_`{|}~]+(\.[-a-zA-Z0-9!#$%&'*+/=?^_`{|}~]+)*)@"
-    r"(?!-)(?:[a-zA-Z0-9-]{0,62}[a-zA-Z0-9]\.)+[a-zA-Z]{2,6}$"
+    r"(?!-)(?:[a-zA-Z0-9-]{0,62}[a-zA-Z0-9]\.)+[a-zA-Z]{2,63}$"
 )
 
 ROLE_PREFIXES = {
     "admin", "info", "sales", "support", "contact", "billing",
     "hello", "jobs", "careers", "marketing", "office", "help",
-    "webmaster", "postmaster", "hostmaster", "abuse", "team"
+    "webmaster", "postmaster", "hostmaster", "abuse", "team",
+    "security", "privacy", "press", "inquiries", "media"
 }
 
 FREE_PROVIDERS = {
     "gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "aol.com", "icloud.com",
-    "protonmail.com", "zoho.com", "mail.com", "gmx.com", "yandex.com", "live.com"
+    "protonmail.com", "zoho.com", "mail.com", "gmx.com", "yandex.com", "live.com",
+    "msn.com", "comcast.net", "sbcglobal.net", "verizon.net", "att.net", "fastmail.com"
 }
+
+# Standard built-in disposable and temporary email domains
+BUILTIN_DISPOSABLE_DOMAINS = {
+    "mailinator.com", "tempmail.com", "10minutemail.com", "guerrillamail.com",
+    "sharklasers.com", "yopmail.com", "trashmail.com", "fakeinbox.com",
+    "getairmail.com", "dispostable.com", "burnermail.io", "throwawaymail.com",
+    "temp-mail.org", "nada.ltd", "getnada.com", "inboxkitten.com", "crazymailing.com",
+    "generator.email", "fakemailgenerator.com", "mohmal.com", "tempmailaddress.com",
+    "mytemp.email", "emailondeck.com", "tempm.com", "dropmail.me", "internxt.com",
+    "grr.la", "guerrillamailblock.com", "guerrillamail.net", "guerrillamail.org",
+    "guerrillamail.biz", "tempmail.net", "disposablemail.com", "tempinbox.com",
+    "maildrop.cc", "mintemail.com", "harakirimail.com", "trashmail.net", "trashmail.org",
+    "yopmail.fr", "yopmail.net", "cool.fr.nf", "jetable.fr.nf", "courriel.fr.nf",
+    "moncourrier.fr.nf", "monemail.fr.nf", "monmail.fr.nf", "hide.biz.st",
+    "mytrashmail.com", "mailcatch.com", "spamgourmet.com", "trashmail.de",
+    "trashmail.me", "mytempemail.com", "armyspy.com", "cuvox.de", "dayrep.com",
+    "einrot.com", "fleckens.hu", "gustr.com", "jourrapide.com", "rhyta.com",
+    "superrito.com", "teleworm.us", "vomoto.com", "filzmail.com", "drdrb.net"
+}
+
+# Per-domain probe locks to prevent duplicate catch-all checks across concurrent coroutines
+_domain_probe_locks: Dict[str, asyncio.Lock] = {}
+
+def _get_domain_probe_lock(domain: str) -> asyncio.Lock:
+    clean = domain.strip().lower()
+    if clean not in _domain_probe_locks:
+        _domain_probe_locks[clean] = asyncio.Lock()
+    return _domain_probe_locks[clean]
 
 def check_syntax(email: str) -> bool:
     if not isinstance(email, str) or len(email) > 254:
         return False
-    if ".." in email:
+    if ".." in email or '@' not in email:
         return False
+    parts = email.split('@')
+    if len(parts) != 2:
+        return False
+    local_part, domain = parts
+    if len(local_part) > 64 or len(local_part) == 0:
+        return False
+    if len(domain) > 253 or len(domain) == 0:
+        return False
+    for label in domain.split('.'):
+        if len(label) == 0 or len(label) > 63:
+            return False
+        if label.startswith('-') or label.endswith('-'):
+            return False
     return bool(EMAIL_REGEX.match(email))
 
 def check_role(email: str) -> bool:
@@ -91,9 +134,21 @@ def check_role(email: str) -> bool:
     return local_part in ROLE_PREFIXES
 
 def check_disposable(domain: str) -> bool:
-    db = get_db()
-    res = db.execute("SELECT domain FROM disposable_domains WHERE domain = ?", [domain.lower()]).fetchone()
-    return res is not None
+    clean = domain.strip().lower()
+    if clean in BUILTIN_DISPOSABLE_DOMAINS:
+        return True
+    # Check parent domain suffix (e.g. sub.mailinator.com -> mailinator.com)
+    for disp in BUILTIN_DISPOSABLE_DOMAINS:
+        if clean.endswith("." + disp):
+            return True
+    try:
+        db = get_db()
+        res = db.execute("SELECT domain FROM disposable_domains WHERE domain = ?", [clean]).fetchone()
+        if res is not None:
+            return True
+    except Exception:
+        pass
+    return False
 
 def compute_quality_and_confidence(detailed_status: str, is_role: bool = False, is_disposable: bool = False) -> Tuple[str, float]:
     """
@@ -153,25 +208,31 @@ def map_to_legacy_status(detailed_status: str, is_role: bool, is_disposable: boo
 
 async def get_domain_intelligence(domain: str) -> Optional[dict]:
     db = get_db()
-    res = db.execute("SELECT mx_server, catch_all, disposable, reputation_score FROM domain_intelligence "
-                     "WHERE domain = ? AND (epoch(CURRENT_TIMESTAMP) - epoch(last_checked)) < ?", 
-                     [domain.lower(), settings.DOMAIN_INTELLIGENCE_TTL]).fetchone()
-    if res and res[0] is not None:
-        return {
-            "mx_server": res[0],
-            "catch_all": bool(res[1]),
-            "disposable": bool(res[2]),
-            "reputation_score": res[3]
-        }
+    try:
+        res = db.execute("SELECT mx_server, catch_all, disposable, reputation_score FROM domain_intelligence "
+                         "WHERE domain = ? AND (epoch(CURRENT_TIMESTAMP) - epoch(last_checked)) < ?", 
+                         [domain.lower(), settings.DOMAIN_INTELLIGENCE_TTL]).fetchone()
+        if res and res[0] is not None:
+            return {
+                "mx_server": res[0],
+                "catch_all": bool(res[1]) if res[1] is not None else False,
+                "disposable": bool(res[2]) if res[2] is not None else False,
+                "reputation_score": res[3] if res[3] is not None else 1.0
+            }
+    except Exception:
+        pass
     return None
 
 async def save_domain_intelligence(domain: str, info: dict):
     db = get_db()
-    db.execute("""
-        INSERT OR REPLACE INTO domain_intelligence 
-        (domain, mx_server, catch_all, disposable, reputation_score, last_checked)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, [domain.lower(), info.get("mx_server"), info.get("catch_all"), info.get("disposable"), info.get("reputation_score", 1.0), datetime.datetime.now()])
+    try:
+        db.execute("""
+            INSERT OR REPLACE INTO domain_intelligence 
+            (domain, mx_server, catch_all, disposable, reputation_score, last_checked)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, [domain.lower(), info.get("mx_server"), info.get("catch_all"), info.get("disposable"), info.get("reputation_score", 1.0), datetime.datetime.now()])
+    except Exception:
+        pass
 
 async def get_email_cache(email: str) -> Optional[dict]:
     db = get_db()
@@ -478,7 +539,7 @@ async def verify_single_email(email: str, check_catch_all: bool = True) -> Dict[
                 }
             }
 
-    # 4. Provider & Intelligence Lookup
+    # 4. Provider & Intelligence Lookup (with deduplicated domain probing)
     mx_records = dns_detail["mx_records"]
     primary_mx = mx_records[0]
     p_info = provider_engine.detect_provider(mx_records, banner="", domain=domain)
@@ -488,20 +549,43 @@ async def verify_single_email(email: str, check_catch_all: bool = True) -> Dict[
     domain_info = await get_domain_intelligence(domain)
     if not domain_info:
         is_disposable = check_disposable(domain)
-        catch_all_info = {"is_catch_all": False}
+        catch_all = False
+        
+        # Deduplicate concurrent catch-all probes for the same domain using asyncio lock
         if check_catch_all and not is_disposable:
-            catch_all_info = await check_catch_all_detailed(primary_mx, domain)
+            async with _get_domain_probe_lock(domain):
+                # Re-check domain intelligence after acquiring lock
+                cached_dinfo = await get_domain_intelligence(domain)
+                if cached_dinfo:
+                    catch_all = cached_dinfo.get("catch_all", False)
+                else:
+                    catch_all_res = await check_catch_all_detailed(
+                        primary_mx, 
+                        domain, 
+                        sender_email=settings.SMTP_MAIL_FROM, 
+                        helo_host=settings.SMTP_HELO_HOST
+                    )
+                    catch_all = catch_all_res["is_catch_all"]
+                    domain_info = {
+                        "mx_server": primary_mx,
+                        "catch_all": catch_all,
+                        "disposable": is_disposable,
+                        "reputation_score": 1.0 if not is_disposable else 0.0
+                    }
+                    await save_domain_intelligence(domain, domain_info)
+        else:
+            domain_info = {
+                "mx_server": primary_mx,
+                "catch_all": False,
+                "disposable": is_disposable,
+                "reputation_score": 1.0 if not is_disposable else 0.0
+            }
+            await save_domain_intelligence(domain, domain_info)
 
-        domain_info = {
-            "mx_server": primary_mx,
-            "catch_all": catch_all_info["is_catch_all"],
-            "disposable": is_disposable,
-            "reputation_score": 1.0 if not is_disposable else 0.0
-        }
-        await save_domain_intelligence(domain, domain_info)
+    domain_info = domain_info or {"mx_server": primary_mx, "catch_all": False, "disposable": check_disposable(domain)}
 
     # 5. Disposable Check Fast-Fail
-    if domain_info["disposable"]:
+    if domain_info.get("disposable", False):
         detailed_status = "Disposable"
         quality, conf = compute_quality_and_confidence(detailed_status, is_role, True)
         legacy_status = map_to_legacy_status(detailed_status, is_role, True)
@@ -555,23 +639,58 @@ async def verify_single_email(email: str, check_catch_all: bool = True) -> Dict[
             }
         }
 
-    # 6. SMTP Verification Phase
+    # 6. SMTP Verification Phase with MX Server Failover in Priority Order
     smtp_start = time.perf_counter()
-    smtp_res = await verify_smtp_with_retries(primary_mx, email)
+    selected_mx = primary_mx
+    smtp_res = None
+
+    for candidate_mx in mx_records:
+        selected_mx = candidate_mx
+        res = await verify_smtp_with_retries(
+            candidate_mx, 
+            email, 
+            sender_email=settings.SMTP_MAIL_FROM, 
+            helo_host=settings.SMTP_HELO_HOST
+        )
+        smtp_res = res
+
+        # If we got a definitive mailbox answer (Deliverable, Undeliverable, Disabled, Mailbox Full), stop immediately
+        if res["status"] in ("Deliverable", "Undeliverable", "Disabled", "Mailbox Full"):
+            break
+
+        # If server issued an authoritative policy/protection response (code >= 500), do not retry next MX
+        if res["status"] == "Protected" and res.get("smtp_code", 0) >= 500:
+            break
+
+        # On connection failure or temporary 4xx, try next priority MX if available
+        if res["status"] in ("Temporary Failure", "SMTP Timeout", "Protected") and len(mx_records) > 1:
+            logger.debug(f"[MX Failover] MX {candidate_mx} returned {res['status']} ({res['reason']}). Trying next MX...")
+            continue
+
     smtp_ms = (time.perf_counter() - smtp_start) * 1000.0
+
+    if smtp_res is None:
+        smtp_res = {
+            "status": "Temporary Failure",
+            "smtp_code": 0,
+            "reason": "No MX servers could be reached",
+            "raw_message": "No MX reachable",
+            "tls_used": False,
+            "smtp_transcript": {}
+        }
 
     # PTR Enrichment for security blocked / unknown
     if smtp_res["status"] in ("Unknown", "Protected", "Temporary Failure"):
-        mx_ip = await resolve_mx_ip(primary_mx)
+        mx_ip = await resolve_mx_ip(selected_mx)
         if mx_ip:
             ptr = await get_ptr_record(mx_ip)
             if ptr:
                 smtp_res["reason"] += f" [PTR: {ptr}]"
 
-    # 7. Weighted Decision Engine & Final Status Determination
+    # 7. Strict Evidence-Based Decision Engine & Final Status Determination
     raw_status = smtp_res["status"]
     if raw_status == "Deliverable":
-        if domain_info["catch_all"]:
+        if domain_info.get("catch_all", False):
             detailed_status = "Catch-All"
         elif is_role:
             detailed_status = "Role Based"
@@ -587,7 +706,9 @@ async def verify_single_email(email: str, check_catch_all: bool = True) -> Dict[
     legacy_status = map_to_legacy_status(detailed_status, is_role, False)
     reason = smtp_res["reason"]
 
-    await save_email_cache(email, legacy_status, conf)
+    # Only cache definitive conclusive results (never cache temporary failures)
+    if detailed_status in ("Deliverable", "Role Based", "Undeliverable", "Disabled", "Catch-All", "Disposable"):
+        await save_email_cache(email, legacy_status, conf)
 
     elapsed_ms = (time.perf_counter() - start_ts) * 1000.0
     engine_metrics.record_verification(detailed_status, provider_name, elapsed_ms, dns_ms=dns_ms, smtp_ms=smtp_ms)
@@ -604,7 +725,7 @@ async def verify_single_email(email: str, check_catch_all: bool = True) -> Dict[
             "response": smtp_res.get("raw_message", "")
         },
         "tls": smtp_res.get("tls_used", False),
-        "catch_all": domain_info["catch_all"],
+        "catch_all": domain_info.get("catch_all", False),
         "disposable": False,
         "role_account": is_role,
         "free_provider": is_free,
@@ -622,9 +743,9 @@ async def verify_single_email(email: str, check_catch_all: bool = True) -> Dict[
         "quality": quality,
         "confidence": conf,
         "domain": domain,
-        "mx_server": primary_mx,
-        "mx_host": primary_mx,
-        "catch_all": domain_info["catch_all"],
+        "mx_server": selected_mx,
+        "mx_host": selected_mx,
+        "catch_all": domain_info.get("catch_all", False),
         "disposable": False,
         "is_disposable": False,
         "role_based": is_role,
@@ -644,6 +765,6 @@ async def verify_single_email(email: str, check_catch_all: bool = True) -> Dict[
         "verification_report": report
     }
 
-    logger.info(f"Verified {email} | Domain: {domain} | MX: {primary_mx} | Provider: {provider_name} | Status: {detailed_status} | Quality: {quality} | Time: {round(elapsed_ms/1000.0, 2)}s")
+    logger.info(f"Verified {email} | Domain: {domain} | MX: {selected_mx} | Provider: {provider_name} | Status: {detailed_status} | Quality: {quality} | Time: {round(elapsed_ms/1000.0, 2)}s")
 
     return result

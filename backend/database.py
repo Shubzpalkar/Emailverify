@@ -188,6 +188,22 @@ def init_db():
     );
     """)
 
+    # Seed disposable domains table if empty
+    disp_count = db.execute("SELECT COUNT(*) FROM disposable_domains").fetchone()[0]
+    if disp_count == 0:
+        seed_disposables = [
+            "mailinator.com", "tempmail.com", "10minutemail.com", "guerrillamail.com",
+            "sharklasers.com", "yopmail.com", "trashmail.com", "fakeinbox.com",
+            "getairmail.com", "dispostable.com", "burnermail.io", "throwawaymail.com",
+            "temp-mail.org", "nada.ltd", "getnada.com", "inboxkitten.com", "crazymailing.com",
+            "generator.email", "fakemailgenerator.com", "mohmal.com", "tempmailaddress.com",
+            "mytemp.email", "emailondeck.com", "tempm.com", "dropmail.me", "internxt.com",
+            "grr.la", "guerrillamailblock.com", "guerrillamail.net", "guerrillamail.org",
+            "guerrillamail.biz", "tempmail.net", "disposablemail.com", "tempinbox.com",
+            "maildrop.cc", "mintemail.com", "harakirimail.com", "trashmail.net", "trashmail.org"
+        ]
+        db.executemany("INSERT OR IGNORE INTO disposable_domains (domain) VALUES (?)", [[d] for d in seed_disposables])
+
     db.execute("""
     CREATE TABLE IF NOT EXISTS domain_intelligence (
         domain VARCHAR PRIMARY KEY,
@@ -551,32 +567,29 @@ def init_db():
     except Exception:
         pass
 
-    # Seed an admin user if not exists
-    admin_email = "admin@example.com"
-    res = db.execute("SELECT id FROM users WHERE email = ?", [admin_email]).fetchone()
-    if not res:
-        admin_id = str(uuid.uuid4())
-        hashed_password = pwd_context.hash("admin")
-        db.execute(
-            "INSERT INTO users (id, email, password_hash, credits, role) VALUES (?, ?, ?, ?, ?)",
-            [admin_id, admin_email, hashed_password, 1000000, 'admin']
-        )
+    # Clean up any legacy default admin backdoor if present
+    try:
+        legacy_admin = db.execute("SELECT id FROM users WHERE email = 'admin@example.com' AND password_hash IS NOT NULL").fetchone()
+        if legacy_admin:
+            db.execute("DELETE FROM users WHERE id = ?", [legacy_admin[0]])
+    except Exception:
+        pass
 
-    # Seed Superadmin
-    existing_sa = db.execute(
-        "SELECT id FROM users WHERE role = 'superadmin' LIMIT 1"
-    ).fetchone()
+    # Seed Superadmin only if credentials explicitly provided
+    if settings.SUPERADMIN_PASSWORD:
+        existing_sa = db.execute(
+            "SELECT id FROM users WHERE role = 'superadmin' LIMIT 1"
+        ).fetchone()
 
-    if not existing_sa:
-        from datetime import datetime, timezone
-        sa_id = str(uuid.uuid4())
-        hashed = pwd_context.hash(settings.SUPERADMIN_PASSWORD)
-        db.execute("""
-            INSERT INTO users (id, email, password_hash, role, credit_pool, is_active, created_at)
-            VALUES (?, ?, ?, 'superadmin', 999999999, TRUE, ?)
-        """, [sa_id, settings.SUPERADMIN_EMAIL, hashed, datetime.now(timezone.utc)])
-        print(f"[BOOT] Superadmin created: {settings.SUPERADMIN_EMAIL} / {settings.SUPERADMIN_PASSWORD}")
-        print(f"[BOOT] CHANGE THIS PASSWORD IMMEDIATELY after first login.")
+        if not existing_sa:
+            from datetime import datetime, timezone
+            sa_id = str(uuid.uuid4())
+            hashed = pwd_context.hash(settings.SUPERADMIN_PASSWORD)
+            db.execute("""
+                INSERT INTO users (id, email, password_hash, role, role_id, credit_pool, is_active, created_at)
+                VALUES (?, ?, ?, 'superadmin', 'role_superadmin', 999999999, TRUE, ?)
+            """, [sa_id, settings.SUPERADMIN_EMAIL, hashed, datetime.now(timezone.utc)])
+            print(f"[BOOT] Superadmin initialized: {settings.SUPERADMIN_EMAIL}")
 
     # RBAC SEEDING
     roles_data = [

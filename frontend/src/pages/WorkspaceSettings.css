@@ -12,9 +12,9 @@
 
 /* Section Sidebar Nav */
 .ws-nav-sidebar {
-  background: var(--surface-glass, rgba(255, 255, 255, 0.03));
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
-  border-radius: 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 16px);
   padding: 1rem;
   height: fit-content;
   position: sticky;

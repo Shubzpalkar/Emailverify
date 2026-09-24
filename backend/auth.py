@@ -49,6 +49,8 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
 
 
 def _row_to_user(row) -> UserResponse:
+    pool = row[12] if (len(row) > 12 and row[12] is not None) else None
+    credits_val = pool if pool is not None else (row[6] or 0)
     return UserResponse(
         id=row[0],
         firebase_uid=row[1],
@@ -56,13 +58,13 @@ def _row_to_user(row) -> UserResponse:
         display_name=row[3],
         role=row[4],
         plan=row[5] or "Free",
-        credits=row[6] or 0,
+        credits=credits_val,
         status=row[7] or "Active",
         created_at=row[8],
         last_login=row[9],
         email_verified=bool(row[10]),
         admin_id=row[11],
-        credit_pool=row[12] or 0,
+        credit_pool=pool if pool is not None else (row[6] or 0),
         is_active=bool(row[13]),
         tier=row[14],
         company=row[15] if len(row) > 15 else None,

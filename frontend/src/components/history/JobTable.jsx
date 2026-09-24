@@ -96,8 +96,14 @@ export default function JobTable({
           <tbody>
             {jobs.length === 0 ? (
               <tr>
-                <td colSpan="9" style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)' }}>
-                  No verification jobs match your filter criteria.
+                <td colSpan="9" style={{ padding: '0' }}>
+                  <div className="table-empty-state">
+                    <div className="empty-state-icon">
+                      <ListChecks size={36} color="var(--primary)" />
+                    </div>
+                    <h4>No verification jobs found</h4>
+                    <p>No jobs match your filter criteria, or you haven't uploaded any verification lists yet.</p>
+                  </div>
                 </td>
               </tr>
             ) : (

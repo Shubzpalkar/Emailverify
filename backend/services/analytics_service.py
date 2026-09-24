@@ -57,25 +57,16 @@ def get_analytics_overview(user_id: str, workspace_id: str, role: str, timeframe
     inv = row[4] or 0
     unk = row[5] or 0
 
-    if total == 0:
-        # Benchmark defaults for clean dashboard display if no historical jobs yet
-        total = 12500
-        deliv = 9800
-        prot = 1200
-        catch = 800
-        inv = 500
-        unk = 200
-
     return {
         "total_emails_verified": total,
-        "deliverable_percentage": round((deliv / total * 100), 1),
-        "protected_percentage": round((prot / total * 100), 1),
-        "catch_all_percentage": round((catch / total * 100), 1),
-        "invalid_percentage": round((inv / total * 100), 1),
-        "unknown_percentage": round((unk / total * 100), 1),
-        "credits_used": row[6] or 12500,
-        "avg_verification_time_ms": round(row[7] or 142.5, 1),
-        "monthly_growth": 14.8
+        "deliverable_percentage": round((deliv / total * 100), 1) if total > 0 else 0.0,
+        "protected_percentage": round((prot / total * 100), 1) if total > 0 else 0.0,
+        "catch_all_percentage": round((catch / total * 100), 1) if total > 0 else 0.0,
+        "invalid_percentage": round((inv / total * 100), 1) if total > 0 else 0.0,
+        "unknown_percentage": round((unk / total * 100), 1) if total > 0 else 0.0,
+        "credits_used": row[6] or 0,
+        "avg_verification_time_ms": round(row[7] or 0.0, 1),
+        "monthly_growth": 0.0
     }
 
 
@@ -96,7 +87,8 @@ def get_analytics_trends(user_id: str, workspace_id: str, role: str, timeframe: 
                 COALESCE(SUM(total_emails), 0),
                 COALESCE(SUM(credits_used), 0),
                 COALESCE(SUM(deliverable_count), 0),
-                COALESCE(SUM(invalid_count), 0)
+                COALESCE(SUM(invalid_count), 0),
+                COALESCE(AVG(processing_time_ms), 0)
             FROM verification_jobs vj
             WHERE {auth_clause} AND vj.created_at >= ? AND vj.created_at < ? AND COALESCE(vj.is_deleted, FALSE) = FALSE
         """, params + [d_start, d_end]).fetchone()
@@ -105,8 +97,8 @@ def get_analytics_trends(user_id: str, workspace_id: str, role: str, timeframe: 
         deliv = row[2] or 0
         inv = row[3] or 0
 
-        deliv_pct = round((deliv / tot * 100), 1) if tot > 0 else 92.5
-        inv_pct = round((inv / tot * 100), 1) if tot > 0 else 4.2
+        deliv_pct = round((deliv / tot * 100), 1) if tot > 0 else 0.0
+        inv_pct = round((inv / tot * 100), 1) if tot > 0 else 0.0
 
         trend.append({
             "label": day_date,
@@ -114,7 +106,7 @@ def get_analytics_trends(user_id: str, workspace_id: str, role: str, timeframe: 
             "credits_used": row[1] or 0,
             "deliverability_pct": deliv_pct,
             "invalid_rate_pct": inv_pct,
-            "processing_time_ms": 135 + (i * 2)
+            "processing_time_ms": round(row[4] or 0.0, 1)
         })
 
     return {"timeframe": timeframe, "trend": trend}
@@ -140,73 +132,94 @@ def get_analytics_breakdown(user_id: str, workspace_id: str, role: str, timefram
     """, params + [cutoff]).fetchone()
 
     counts = {
-        "deliverable": row[0] or 9800,
-        "protected": row[1] or 1200,
-        "catch_all": row[2] or 800,
-        "disposable": row[3] or 150,
-        "role_accounts": row[4] or 90,
-        "unknown": row[5] or 200,
-        "duplicates": row[6] or 110,
-        "invalid": row[7] or 500
+        "deliverable": row[0] or 0,
+        "protected": row[1] or 0,
+        "catch_all": row[2] or 0,
+        "disposable": row[3] or 0,
+        "role_accounts": row[4] or 0,
+        "unknown": row[5] or 0,
+        "duplicates": row[6] or 0,
+        "invalid": row[7] or 0
     }
-    total = max(sum(counts.values()), 1)
+    total = sum(counts.values())
 
     return {
         "counts": counts,
         "total": total,
-        "percentages": {k: round((v / total * 100), 1) for k, v in counts.items()}
+        "percentages": {k: (round((v / total * 100), 1) if total > 0 else 0.0) for k, v in counts.items()}
     }
 
 
 def get_domain_analytics(user_id: str, workspace_id: str, role: str, timeframe: str = "30days") -> dict:
-    top_domains = [
-        {"domain": "gmail.com", "verified": 8500, "deliverable_pct": 98.2, "invalid_pct": 1.1, "protected_pct": 0.5, "catch_all_pct": 0.2, "avg_time_ms": 110},
-        {"domain": "outlook.com", "verified": 4200, "deliverable_pct": 94.5, "invalid_pct": 2.8, "protected_pct": 1.5, "catch_all_pct": 1.2, "avg_time_ms": 145},
-        {"domain": "yahoo.com", "verified": 3100, "deliverable_pct": 91.0, "invalid_pct": 5.2, "protected_pct": 2.1, "catch_all_pct": 1.7, "avg_time_ms": 160},
-        {"domain": "company.io", "verified": 1800, "deliverable_pct": 86.5, "invalid_pct": 6.0, "protected_pct": 4.0, "catch_all_pct": 3.5, "avg_time_ms": 190},
-        {"domain": "icloud.com", "verified": 950, "deliverable_pct": 96.0, "invalid_pct": 2.0, "protected_pct": 1.0, "catch_all_pct": 1.0, "avg_time_ms": 130}
-    ]
+    db = get_db()
+    auth_clause, params = _build_auth_filter(user_id, workspace_id, role)
+    cutoff = _build_time_cutoff(timeframe)
 
-    worst_domains = [
-        {"domain": "temp-mail.org", "verified": 250, "invalid_pct": 88.0},
-        {"domain": "disposable.net", "verified": 180, "invalid_pct": 92.5},
-        {"domain": "spam-domain.com", "verified": 120, "invalid_pct": 95.0}
-    ]
+    rows = db.execute(f"""
+        SELECT vr.domain, COUNT(*) as verified,
+               COUNT(CASE WHEN vr.status = 'valid' THEN 1 END) as deliv,
+               COUNT(CASE WHEN vr.status = 'invalid' THEN 1 END) as inv,
+               COUNT(CASE WHEN vr.status = 'risky' THEN 1 END) as prot,
+               COUNT(CASE WHEN vr.status = 'catch_all' THEN 1 END) as catch
+        FROM verification_results vr
+        JOIN verification_jobs vj ON vr.job_id = vj.id
+        WHERE {auth_clause} AND vj.created_at >= ? AND COALESCE(vj.is_deleted, FALSE) = FALSE AND vr.domain IS NOT NULL AND vr.domain != ''
+        GROUP BY vr.domain
+        ORDER BY verified DESC
+        LIMIT 5
+    """, params + [cutoff]).fetchall()
+
+    top_domains = []
+    for r in rows:
+        v_cnt = r[1] or 1
+        top_domains.append({
+            "domain": r[0],
+            "verified": r[1],
+            "deliverable_pct": round(((r[2] or 0) / v_cnt * 100), 1),
+            "invalid_pct": round(((r[3] or 0) / v_cnt * 100), 1),
+            "protected_pct": round(((r[4] or 0) / v_cnt * 100), 1),
+            "catch_all_pct": round(((r[5] or 0) / v_cnt * 100), 1),
+            "avg_time_ms": 0
+        })
 
     return {
         "top_domains": top_domains,
-        "worst_domains": worst_domains,
-        "highest_invalid_rate_domain": "spam-domain.com",
-        "fastest_provider": "Google Workspace DNS (110ms)"
+        "worst_domains": [],
+        "highest_invalid_rate_domain": top_domains[0]["domain"] if top_domains else None,
+        "fastest_provider": None
     }
 
 
 def get_provider_analytics(user_id: str, workspace_id: str, role: str, timeframe: str = "30days") -> list[dict]:
-    providers = [
-        {"provider": "Google Workspace", "count": 8500, "protected_rate": 0.5, "catch_all_rate": 0.2, "avg_smtp_ms": 85.0, "avg_dns_ms": 25.0, "failure_rate": 0.8},
-        {"provider": "Microsoft 365", "count": 4200, "protected_rate": 1.5, "catch_all_rate": 1.2, "avg_smtp_ms": 115.0, "avg_dns_ms": 30.0, "failure_rate": 1.2},
-        {"provider": "Proofpoint", "count": 1400, "protected_rate": 12.0, "catch_all_rate": 4.5, "avg_smtp_ms": 180.0, "avg_dns_ms": 40.0, "failure_rate": 2.5},
-        {"provider": "Mimecast", "count": 1100, "protected_rate": 10.5, "catch_all_rate": 5.0, "avg_smtp_ms": 195.0, "avg_dns_ms": 42.0, "failure_rate": 2.8},
-        {"provider": "Zoho Mail", "count": 850, "protected_rate": 2.0, "catch_all_rate": 2.5, "avg_smtp_ms": 140.0, "avg_dns_ms": 35.0, "failure_rate": 1.5},
-        {"provider": "Amazon SES", "count": 650, "protected_rate": 1.0, "catch_all_rate": 0.8, "avg_smtp_ms": 95.0, "avg_dns_ms": 22.0, "failure_rate": 0.9}
-    ]
-    return providers
+    return []
 
 
 def get_credit_analytics(user_id: str, workspace_id: str, role: str, timeframe: str = "30days") -> dict:
     db = get_db()
     auth_clause, params = _build_auth_filter(user_id, workspace_id, role)
+    now_utc = datetime.now(timezone.utc)
+    today_start = datetime(now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc)
+    week_start = now_utc - timedelta(days=7)
+    month_start = datetime(now_utc.year, now_utc.month, 1, tzinfo=timezone.utc)
 
-    total_credits = db.execute(f"""
-        SELECT COALESCE(SUM(credits_used), 0) FROM verification_jobs vj WHERE {auth_clause}
-    """, params).fetchone()[0] or 0
+    today_credits = db.execute(f"""
+        SELECT COALESCE(SUM(credits_used), 0) FROM verification_jobs vj WHERE {auth_clause} AND created_at >= ? AND COALESCE(is_deleted, FALSE) = FALSE
+    """, params + [today_start]).fetchone()[0] or 0
+
+    weekly_credits = db.execute(f"""
+        SELECT COALESCE(SUM(credits_used), 0) FROM verification_jobs vj WHERE {auth_clause} AND created_at >= ? AND COALESCE(is_deleted, FALSE) = FALSE
+    """, params + [week_start]).fetchone()[0] or 0
+
+    monthly_credits = db.execute(f"""
+        SELECT COALESCE(SUM(credits_used), 0) FROM verification_jobs vj WHERE {auth_clause} AND created_at >= ? AND COALESCE(is_deleted, FALSE) = FALSE
+    """, params + [month_start]).fetchone()[0] or 0
 
     return {
-        "credits_today": 450,
-        "weekly_credits": 3100,
-        "monthly_credits": total_credits or 12500,
-        "credits_per_workspace": total_credits or 12500,
-        "avg_credits_per_job": 250,
+        "credits_today": today_credits,
+        "weekly_credits": weekly_credits,
+        "monthly_credits": monthly_credits,
+        "credits_per_workspace": monthly_credits,
+        "avg_credits_per_job": 0,
         "consumption_trend": "Stable"
     }
 
@@ -216,7 +229,7 @@ def get_team_analytics(workspace_id: str, role: str) -> dict:
     rows = db.execute("""
         SELECT u.display_name, u.email, u.role, COUNT(vj.id), COALESCE(SUM(vj.total_emails), 0), COALESCE(SUM(vj.credits_used), 0)
         FROM users u
-        LEFT JOIN verification_jobs vj ON u.id = vj.user_id
+        LEFT JOIN verification_jobs vj ON u.id = vj.user_id AND COALESCE(vj.is_deleted, FALSE) = FALSE
         WHERE u.workspace_id = ?
         GROUP BY u.id, u.display_name, u.email, u.role
         ORDER BY COALESCE(SUM(vj.total_emails), 0) DESC
@@ -224,13 +237,14 @@ def get_team_analytics(workspace_id: str, role: str) -> dict:
 
     leaderboard = []
     for r in rows:
+        tot_emails = r[4] or 0
         leaderboard.append({
             "name": r[0] or r[1] or "User",
             "role": r[2],
             "jobs_count": r[3],
-            "emails_verified": r[4],
+            "emails_verified": tot_emails,
             "credits_used": r[5],
-            "success_rate": 98.2
+            "success_rate": 0.0
         })
 
     return {"leaderboard": leaderboard}
@@ -238,13 +252,13 @@ def get_team_analytics(workspace_id: str, role: str) -> dict:
 
 def get_performance_analytics(user_id: str, workspace_id: str, role: str) -> dict:
     return {
-        "avg_smtp_time_ms": 112.4,
-        "avg_dns_time_ms": 28.1,
-        "avg_queue_time_ms": 4.5,
-        "avg_verification_time_ms": 145.0,
-        "emails_per_second": 85.2,
-        "jobs_per_hour": 14,
-        "processing_efficiency": 99.4
+        "avg_smtp_time_ms": 0.0,
+        "avg_dns_time_ms": 0.0,
+        "avg_queue_time_ms": 0.0,
+        "avg_verification_time_ms": 0.0,
+        "emails_per_second": 0.0,
+        "jobs_per_hour": 0,
+        "processing_efficiency": 0.0
     }
 
 
@@ -273,19 +287,22 @@ def get_file_analytics(user_id: str, workspace_id: str, role: str) -> dict:
 
     return {
         "largest_files": largest_files,
-        "avg_file_size_kb": 420,
-        "credits_per_file": 250
+        "avg_file_size_kb": 0,
+        "credits_per_file": 0
     }
 
 
 def compare_jobs(job_id_a: str, job_id_b: str, user_id: str, workspace_id: str, role: str) -> dict:
     db = get_db()
-    row_a = db.execute("SELECT file_name, total_emails, deliverable_count, protected_count, catch_all_count, invalid_count, credits_used, processing_time_ms FROM verification_jobs WHERE id = ?", [job_id_a]).fetchone()
-    row_b = db.execute("SELECT file_name, total_emails, deliverable_count, protected_count, catch_all_count, invalid_count, credits_used, processing_time_ms FROM verification_jobs WHERE id = ?", [job_id_b]).fetchone()
+    auth_clause, params = _build_auth_filter(user_id, workspace_id, role, prefix="vj")
+    
+    row_a = db.execute(f"SELECT file_name, total_emails, deliverable_count, protected_count, catch_all_count, invalid_count, credits_used, processing_time_ms FROM verification_jobs vj WHERE vj.id = ? AND {auth_clause} AND COALESCE(vj.is_deleted, FALSE) = FALSE", [job_id_a] + params).fetchone()
+    row_b = db.execute(f"SELECT file_name, total_emails, deliverable_count, protected_count, catch_all_count, invalid_count, credits_used, processing_time_ms FROM verification_jobs vj WHERE vj.id = ? AND {auth_clause} AND COALESCE(vj.is_deleted, FALSE) = FALSE", [job_id_b] + params).fetchone()
+
+    if not row_a or not row_b:
+        raise ValueError("One or both jobs not found or access denied")
 
     def format_job(r, jid):
-        if not r:
-            return {"id": jid, "name": "Job " + jid, "total": 1000, "deliverable_pct": 95.0, "invalid_pct": 5.0, "credits": 1000}
         tot = max(r[1] or 1, 1)
         return {
             "id": jid,
@@ -316,12 +333,7 @@ def get_activity_heatmaps(user_id: str, workspace_id: str, role: str) -> dict:
     days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     matrix = []
     for d in days:
-        row_vals = []
-        for h in range(24):
-            # Generate representative activity heat intensity
-            val = (h * 7 + days.index(d) * 11) % 100
-            row_vals.append(val)
-        matrix.append({"day": d, "hours": row_vals})
+        matrix.append({"day": d, "hours": [0] * 24})
     return {"days": days, "matrix": matrix}
 
 
@@ -334,8 +346,8 @@ def get_workspace_analytics(workspace_id: str, role: str) -> dict:
         "workspace_name": ws_row[1] or ws_row[0] if ws_row else "Default Workspace",
         "plan": ws_row[2] if ws_row else "Free",
         "members": mem_count,
-        "quality_score": 96.5,
-        "monthly_trend": "Increasing"
+        "quality_score": 0.0,
+        "monthly_trend": "Stable"
     }
 
 
@@ -344,10 +356,10 @@ def get_system_analytics(role: str) -> dict:
         return {"status": "Restricted"}
 
     return {
-        "smtp_throughput_eps": 1450,
-        "dns_lookup_success_pct": 99.9,
-        "redis_hit_ratio_pct": 98.4,
-        "api_gateway_p99_ms": 18.5,
-        "database_query_avg_ms": 2.1,
+        "smtp_throughput_eps": 0.0,
+        "dns_lookup_success_pct": 100.0,
+        "redis_hit_ratio_pct": 0.0,
+        "api_gateway_p99_ms": 0.0,
+        "database_query_avg_ms": 0.0,
         "queue_backlog_jobs": 0
     }

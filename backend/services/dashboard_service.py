@@ -88,7 +88,7 @@ def get_kpi_data(user_id: str, workspace_id: str) -> dict:
         WHERE (vj.workspace_id = ? OR vj.user_id = ?) AND vr.status = 'valid'
     """, [workspace_id or user_id, user_id]).fetchone()[0] or 0
 
-    success_rate = round((valid_count / total_processed * 100), 1) if total_processed > 0 else 98.5
+    success_rate = round((valid_count / total_processed * 100), 1) if total_processed > 0 else 0.0
 
     return {
         "credits_remaining": credits_rem,
@@ -98,14 +98,14 @@ def get_kpi_data(user_id: str, workspace_id: str) -> dict:
         "running_jobs": running_jobs,
         "completed_jobs": completed_jobs,
         "success_rate": success_rate,
-        "avg_verification_time_ms": 145
+        "avg_verification_time_ms": 0
     }
 
 
 def get_credit_summary(user_id: str, workspace_id: str) -> dict:
     db = get_db()
     rem = 0
-    total = 1000
+    total = 0
     used = 0
     threshold = 1000
 
@@ -120,9 +120,9 @@ def get_credit_summary(user_id: str, workspace_id: str) -> dict:
         u_row = db.execute("SELECT credit_pool, credits FROM users WHERE id = ?", [user_id]).fetchone()
         if u_row:
             rem = u_row[0] if u_row[0] is not None else (u_row[1] or 0)
-            total = max(rem, 100)
+            total = rem
 
-    percent_remaining = round((rem / max(total, 1)) * 100, 1)
+    percent_remaining = round((rem / max(total, 1)) * 100, 1) if total > 0 else 0.0
 
     return {
         "remaining_credits": rem,
@@ -140,7 +140,7 @@ def get_verification_summary(user_id: str, workspace_id: str) -> dict:
         SELECT vr.status, COUNT(*)
         FROM verification_results vr
         JOIN verification_jobs vj ON vr.job_id = vj.id
-        WHERE vj.workspace_id = ? OR vj.user_id = ?
+        WHERE (vj.workspace_id = ? OR vj.user_id = ?) AND COALESCE(vj.is_deleted, FALSE) = FALSE
         GROUP BY vr.status
     """, [workspace_id or user_id, user_id]).fetchall()
 
@@ -172,23 +172,11 @@ def get_verification_summary(user_id: str, workspace_id: str) -> dict:
             counts["unknown"] += cnt
 
     total = sum(counts.values())
-    if total == 0:
-        # Fallback demonstration metrics if no verification results yet
-        counts = {
-            "deliverable": 1420,
-            "protected": 180,
-            "catch_all": 95,
-            "invalid": 210,
-            "unknown": 45,
-            "disposable": 30,
-            "role_based": 20
-        }
-        total = sum(counts.values())
 
     return {
         "counts": counts,
         "total": total,
-        "percentages": {k: round((v / total * 100), 1) for k, v in counts.items()}
+        "percentages": {k: (round((v / total * 100), 1) if total > 0 else 0.0) for k, v in counts.items()}
     }
 
 
@@ -197,7 +185,7 @@ def get_recent_jobs(user_id: str, workspace_id: str) -> list[dict]:
     rows = db.execute("""
         SELECT id, file_name, status, total_emails, processed_emails, created_at, completed_at
         FROM verification_jobs
-        WHERE workspace_id = ? OR user_id = ?
+        WHERE (workspace_id = ? OR user_id = ?) AND COALESCE(is_deleted, FALSE) = FALSE
         ORDER BY created_at DESC
         LIMIT 10
     """, [workspace_id or user_id, user_id]).fetchall()
@@ -236,26 +224,23 @@ def get_analytics_data(user_id: str, workspace_id: str, timeframe: str = "daily"
         """, [workspace_id or user_id, user_id, day_start, day_end]).fetchone()[0] or 0
         trend.append({"label": day_date, "credits": used})
 
-    top_domains = [
-        {"domain": "gmail.com", "count": 450},
-        {"domain": "yahoo.com", "count": 210},
-        {"domain": "outlook.com", "count": 180},
-        {"domain": "company.com", "count": 95},
-        {"domain": "icloud.com", "count": 40}
-    ]
-
-    top_providers = [
-        {"provider": "Google Workspace", "percentage": 42.5},
-        {"provider": "Microsoft 365", "percentage": 35.0},
-        {"provider": "Yahoo Mail", "percentage": 12.5},
-        {"provider": "Other SMTP", "percentage": 10.0}
-    ]
+    # Real top domains
+    d_rows = db.execute("""
+        SELECT vr.domain, COUNT(*) as cnt
+        FROM verification_results vr
+        JOIN verification_jobs vj ON vr.job_id = vj.id
+        WHERE (vj.workspace_id = ? OR vj.user_id = ?) AND vr.domain IS NOT NULL AND vr.domain != '' AND COALESCE(vj.is_deleted, FALSE) = FALSE
+        GROUP BY vr.domain
+        ORDER BY cnt DESC
+        LIMIT 5
+    """, [workspace_id or user_id, user_id]).fetchall()
+    top_domains = [{"domain": r[0], "count": r[1]} for r in d_rows]
 
     return {
         "timeframe": timeframe,
         "trend": trend,
         "top_domains": top_domains,
-        "top_providers": top_providers
+        "top_providers": []
     }
 
 

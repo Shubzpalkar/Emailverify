@@ -259,26 +259,21 @@ def get_job_details(job_id: str, user_id: str, workspace_id: str, role: str) -> 
     }
 
 
-def get_job_timeline(job_id: str) -> list[dict]:
+def get_job_timeline(job_id: str, user_id: str, workspace_id: str, role: str) -> list[dict]:
     db = get_db()
+    auth_clause, params = _build_auth_where_clause(user_id, workspace_id, role)
+    
+    # Verify job ownership
+    job_exists = db.execute(f"SELECT id FROM verification_jobs vj WHERE vj.id = ? AND {auth_clause} AND COALESCE(vj.is_deleted, FALSE) = FALSE", [job_id] + params).fetchone()
+    if not job_exists:
+        raise ValueError("Job not found or access denied")
+
     rows = db.execute("""
         SELECT id, event_type, description, created_at, actor_id
         FROM job_events
         WHERE job_id = ?
         ORDER BY created_at ASC
     """, [job_id]).fetchall()
-
-    if not rows:
-        # Fallback default events timeline if not explicitly recorded
-        j_row = db.execute("SELECT created_at, started_at, completed_at, status FROM verification_jobs WHERE id = ?", [job_id]).fetchone()
-        if j_row:
-            c_at, s_at, comp_at, st = j_row[0], j_row[1], j_row[2], j_row[3]
-            return [
-                {"id": "ev_1", "stage": "Uploaded", "description": "Verification file uploaded & queued", "timestamp": c_at},
-                {"id": "ev_2", "stage": "DNS Check", "description": "MX record & domain intelligence lookup", "timestamp": s_at or c_at},
-                {"id": "ev_3", "stage": "SMTP Verification", "description": "Direct SMTP handshake & mailbox verification", "timestamp": s_at or c_at},
-                {"id": "ev_4", "stage": "Completed", "description": f"Verification job completed ({st})", "timestamp": comp_at or s_at or c_at}
-            ]
 
     events = []
     for r in rows:
@@ -291,8 +286,19 @@ def get_job_timeline(job_id: str) -> list[dict]:
     return events
 
 
-def get_job_diagnostics(job_id: str) -> dict:
+def get_job_diagnostics(job_id: str, user_id: str, workspace_id: str, role: str) -> dict:
     db = get_db()
+    auth_clause, params = _build_auth_where_clause(user_id, workspace_id, role)
+    
+    job = db.execute(f"""
+        SELECT vj.id, vj.error_code, vj.failure_reason, vj.suggested_resolution 
+        FROM verification_jobs vj 
+        WHERE vj.id = ? AND {auth_clause} AND COALESCE(vj.is_deleted, FALSE) = FALSE
+    """, [job_id] + params).fetchone()
+    
+    if not job:
+        raise ValueError("Job not found or access denied")
+
     logs = db.execute("""
         SELECT id, log_level, category, message, details, created_at
         FROM job_logs
@@ -302,7 +308,21 @@ def get_job_diagnostics(job_id: str) -> dict:
     """, [job_id]).fetchall()
 
     log_list = []
+    smtp_errors = 0
+    dns_errors = 0
+    timeouts = 0
+
     for r in logs:
+        lvl = (r[1] or "").upper()
+        msg = (r[3] or "").lower()
+        cat = (r[2] or "").lower()
+        if lvl == "ERROR" or "error" in msg:
+            if "smtp" in cat or "smtp" in msg:
+                smtp_errors += 1
+            elif "dns" in cat or "dns" in msg:
+                dns_errors += 1
+            elif "timeout" in cat or "timeout" in msg:
+                timeouts += 1
         log_list.append({
             "id": r[0],
             "level": r[1],
@@ -313,16 +333,24 @@ def get_job_diagnostics(job_id: str) -> dict:
         })
 
     return {
-        "smtp_errors_count": 0,
-        "dns_errors_count": 0,
-        "timeouts_count": 0,
-        "provider_responses": "22 Provider Behavior Profiles Checked OK",
+        "smtp_errors_count": smtp_errors,
+        "dns_errors_count": dns_errors,
+        "timeouts_count": timeouts,
+        "error_code": job[1],
+        "failure_reason": job[2],
+        "suggested_resolution": job[3],
         "log_entries": log_list
     }
 
 
-def get_job_downloads(job_id: str) -> list[dict]:
+def get_job_downloads(job_id: str, user_id: str, workspace_id: str, role: str) -> list[dict]:
     db = get_db()
+    auth_clause, params = _build_auth_where_clause(user_id, workspace_id, role)
+    
+    job_exists = db.execute(f"SELECT id FROM verification_jobs vj WHERE vj.id = ? AND {auth_clause} AND COALESCE(vj.is_deleted, FALSE) = FALSE", [job_id] + params).fetchone()
+    if not job_exists:
+        raise ValueError("Job not found or access denied")
+
     rows = db.execute("""
         SELECT d.id, d.format, d.records_count, d.created_at, u.display_name, u.email
         FROM job_downloads d
@@ -348,12 +376,14 @@ def retry_failed_job(job_id: str, user_id: str, workspace_id: str, role: str) ->
         raise ValueError("Permission denied: Viewers cannot retry verification jobs")
 
     db = get_db()
+    auth_clause, params = _build_auth_where_clause(user_id, workspace_id, role, prefix="")
+    
     now = datetime.now(timezone.utc)
-    db.execute("""
+    res = db.execute(f"""
         UPDATE verification_jobs
         SET status = 'pending', stage = 'Queued', updated_at = ?
-        WHERE id = ? AND status IN ('failed', 'cancelled')
-    """, [now, job_id])
+        WHERE id = ? AND ({auth_clause}) AND status IN ('failed', 'cancelled') AND COALESCE(is_deleted, FALSE) = FALSE
+    """, [now, job_id] + params)
 
     db.execute("""
         INSERT INTO job_events (id, job_id, event_type, description, actor_id, created_at)
@@ -368,9 +398,11 @@ def archive_job(job_id: str, user_id: str, workspace_id: str, role: str) -> dict
         raise ValueError("Permission denied: Viewers cannot archive jobs")
 
     db = get_db()
-    curr = db.execute("SELECT is_archived FROM verification_jobs WHERE id = ?", [job_id]).fetchone()
+    auth_clause, params = _build_auth_where_clause(user_id, workspace_id, role, prefix="vj")
+    
+    curr = db.execute(f"SELECT vj.is_archived FROM verification_jobs vj WHERE vj.id = ? AND {auth_clause} AND COALESCE(vj.is_deleted, FALSE) = FALSE", [job_id] + params).fetchone()
     if not curr:
-        raise ValueError("Job not found")
+        raise ValueError("Job not found or access denied")
 
     new_state = not bool(curr[0])
     now = datetime.now(timezone.utc)
@@ -384,8 +416,10 @@ def soft_delete_job(job_id: str, user_id: str, workspace_id: str, role: str) -> 
         raise ValueError("Permission denied: Viewers cannot delete verification jobs")
 
     db = get_db()
+    auth_clause, params = _build_auth_where_clause(user_id, workspace_id, role, prefix="")
+    
     now = datetime.now(timezone.utc)
-    db.execute("UPDATE verification_jobs SET is_deleted = TRUE, updated_at = ? WHERE id = ?", [now, job_id])
+    res = db.execute(f"UPDATE verification_jobs SET is_deleted = TRUE, updated_at = ? WHERE id = ? AND ({auth_clause})", [now, job_id] + params)
 
     db.execute("""
         INSERT INTO job_events (id, job_id, event_type, description, actor_id, created_at)

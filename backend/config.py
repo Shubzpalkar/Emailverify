@@ -1,15 +1,18 @@
 import os
+import secrets
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Email Verification Portal"
-    SUPERADMIN_EMAIL: str = "superadmin@system.local"
-    SUPERADMIN_PASSWORD: str = "SuperAdmin@123"
-    DATABASE_PATH: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "email_verifier.db")
-    SECRET_KEY: str = "super_secret_key_change_in_production"
+    SUPERADMIN_EMAIL: str = os.getenv("SUPERADMIN_EMAIL", "superadmin@system.local")
+    SUPERADMIN_PASSWORD: str = os.getenv("SUPERADMIN_PASSWORD", "")
+    DATABASE_PATH: str = os.getenv("DATABASE_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "email_verifier.db"))
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "") or secrets.token_hex(32)
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7 # 7 days
     FIREBASE_CLOCK_SKEW_SECONDS: int = 60 # Max allowed by Firebase Admin SDK is 60 seconds
+    FIREBASE_CREDENTIALS_PATH: str = os.getenv("FIREBASE_CREDENTIALS_PATH", "")
+    FIREBASE_CREDENTIALS_JSON: str = os.getenv("FIREBASE_CREDENTIALS_JSON", "")
     
     # Verification Limits
     MAX_FILE_SIZE_MB: int = 500
@@ -60,6 +63,10 @@ class Settings(BaseSettings):
     # Download configuration
     DOWNLOAD_CHUNK_SIZE: int = 1000  # rows fetched per DuckDB chunk
     
+    # Verification Handshake Identity
+    SMTP_HELO_HOST: str = os.getenv("SMTP_HELO_HOST", "verifier.mailcheck.pro")
+    SMTP_MAIL_FROM: str = os.getenv("SMTP_MAIL_FROM", "verify@mailcheck.pro")
+
     # SMTP Email Configuration
     SMTP_HOST: str = "localhost"
     SMTP_PORT: int = 1025

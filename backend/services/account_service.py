@@ -36,16 +36,51 @@ def get_api_summary(user_id: str):
         "requests_month": 0
     }
 
-def get_usage_summary(user_id: str):
+def get_usage_summary(user_id: str, workspace_id: str = None, role: str = "user"):
+    from datetime import datetime, timezone
     db = get_db()
-    res = db.execute("SELECT COUNT(*) FROM verification_jobs WHERE user_id = ?", [user_id]).fetchone()
-    total_jobs = res[0] if res else 0
+    now_utc = datetime.now(timezone.utc)
+    today_start = datetime(now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc)
+    month_start = datetime(now_utc.year, now_utc.month, 1, tzinfo=timezone.utc)
+
+    if role == "superadmin":
+        where_clause = "1=1"
+        params = []
+    elif workspace_id:
+        where_clause = "(vj.workspace_id = ? OR vj.user_id = ?)"
+        params = [workspace_id, user_id]
+    else:
+        where_clause = "vj.user_id = ?"
+        params = [user_id]
+
+    query = f"""
+        SELECT
+            COUNT(*) as total_jobs,
+            COALESCE(SUM(CASE WHEN vj.created_at >= ? THEN vj.processed_emails ELSE 0 END), 0) as today_verified,
+            COALESCE(SUM(CASE WHEN vj.created_at >= ? THEN vj.processed_emails ELSE 0 END), 0) as month_verified,
+            COALESCE(SUM(vj.processed_emails), 0) as total_verified,
+            COALESCE(SUM(vj.deliverable_count), 0) as total_deliverable,
+            MAX(COALESCE(vj.completed_at, vj.created_at)) as last_verif
+        FROM verification_jobs vj
+        WHERE {where_clause} AND COALESCE(vj.is_deleted, FALSE) = FALSE
+    """
+    row = db.execute(query, [today_start, month_start] + params).fetchone()
+
+    total_jobs = row[0] or 0
+    today_verified = row[1] or 0
+    month_verified = row[2] or 0
+    total_verified = row[3] or 0
+    total_deliverable = row[4] or 0
+    last_verification = row[5]
+
+    success_rate = round((total_deliverable / total_verified * 100), 1) if total_verified > 0 else 0.0
+
     return {
-        "verifications_today": 0,
-        "verifications_month": 0,
-        "total_verified": 0,
-        "success_rate": 0.0,
-        "last_verification": None,
+        "verifications_today": today_verified,
+        "verifications_month": month_verified,
+        "total_verified": total_verified,
+        "success_rate": success_rate,
+        "last_verification": last_verification.isoformat() if hasattr(last_verification, 'isoformat') else (str(last_verification) if last_verification else None),
         "recent_jobs": total_jobs
     }
 

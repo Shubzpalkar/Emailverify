@@ -63,7 +63,9 @@ async def get_job_timeline(
     current_user: UserResponse = Depends(require_permission("verification.history"))
 ):
     try:
-        return history_service.get_job_timeline(job_id)
+        return history_service.get_job_timeline(job_id, current_user.id, current_user.workspace_id, current_user.role)
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -76,6 +78,8 @@ async def get_job_statistics(
     try:
         details = history_service.get_job_details(job_id, current_user.id, current_user.workspace_id, current_user.role)
         return details.get("statistics", {})
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -86,7 +90,9 @@ async def get_job_diagnostics(
     current_user: UserResponse = Depends(require_permission("verification.history"))
 ):
     try:
-        return history_service.get_job_diagnostics(job_id)
+        return history_service.get_job_diagnostics(job_id, current_user.id, current_user.workspace_id, current_user.role)
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -97,7 +103,9 @@ async def get_job_downloads(
     current_user: UserResponse = Depends(require_permission("verification.history"))
 ):
     try:
-        return history_service.get_job_downloads(job_id)
+        return history_service.get_job_downloads(job_id, current_user.id, current_user.workspace_id, current_user.role)
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

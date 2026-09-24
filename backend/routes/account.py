@@ -22,7 +22,7 @@ async def get_api_summary(current_user: UserResponse = Depends(get_current_user)
 
 @router.get("/usage")
 async def get_usage_summary(current_user: UserResponse = Depends(get_current_user)):
-    return account_service.get_usage_summary(current_user.id)
+    return account_service.get_usage_summary(current_user.id, current_user.workspace_id, current_user.role)
 
 @router.delete("/")
 async def delete_account(current_user: UserResponse = Depends(get_current_user)):

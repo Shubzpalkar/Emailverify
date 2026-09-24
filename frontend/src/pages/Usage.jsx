@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { apiCall } from '../api/client';
 
 export default function Usage() {
-  const { user, firebaseUser } = useAuth();
+  const { user } = useAuth();
   const [data, setData] = useState({
     verifications_today: 0,
     verifications_month: 0,
@@ -17,15 +18,8 @@ export default function Usage() {
     async function fetchUsageSummary() {
       if (!user) return;
       try {
-        const res = await fetch('http://localhost:8000/api/account/usage', {
-          headers: {
-            'Authorization': `Bearer ${await firebaseUser.getIdToken()}`
-          }
-        });
-        if (res.ok) {
-          const json = await res.json();
-          setData(json);
-        }
+        const json = await apiCall('/account/usage');
+        setData(json);
       } catch (e) {
         console.error(e);
       } finally {

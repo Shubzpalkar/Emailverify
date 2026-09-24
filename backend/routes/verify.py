@@ -40,7 +40,7 @@ async def verify_email_api(req: VerifyRequest, current_user: UserResponse = Depe
     if current_user.credit_pool < 1:
         raise HTTPException(status_code=402, detail="Insufficient credits")
         
-    db.execute("UPDATE users SET credit_pool = credit_pool - 1 WHERE id = ?", [current_user.id])
+    db.execute("UPDATE users SET credit_pool = GREATEST(0, credit_pool - 1), credits = GREATEST(0, COALESCE(credits, 0) - 1) WHERE id = ?", [current_user.id])
     db.execute("INSERT INTO credits_log (id, user_id, credits_used) VALUES (?, ?, ?)", [str(uuid.uuid4()), current_user.id, 1])
     
     result = await verify_single_email(req.email)
@@ -107,16 +107,23 @@ async def upload_list(background_tasks: BackgroundTasks, file: UploadFile = File
 
 def _get_job_with_auth(db, job_id: str, user: UserResponse):
     if user.role == "superadmin":
-        job = db.execute("SELECT id, file_name, total_emails, processed_emails, status, created_at, completed_at FROM verification_jobs WHERE id = ?", [job_id]).fetchone()
-    elif user.role == "admin":
-        job = db.execute("""
-            SELECT j.id, j.file_name, j.total_emails, j.processed_emails, j.status, j.created_at, j.completed_at 
-            FROM verification_jobs j JOIN users u ON j.user_id = u.id 
-            WHERE j.id = ? AND (u.admin_id = ? OR j.user_id = ?)
-        """, [job_id, user.id, user.id]).fetchone()
+        return db.execute("""
+            SELECT id, file_name, total_emails, processed_emails, status, created_at, completed_at 
+            FROM verification_jobs 
+            WHERE id = ? AND COALESCE(is_deleted, FALSE) = FALSE
+        """, [job_id]).fetchone()
+    elif user.workspace_id:
+        return db.execute("""
+            SELECT id, file_name, total_emails, processed_emails, status, created_at, completed_at 
+            FROM verification_jobs 
+            WHERE id = ? AND (workspace_id = ? OR user_id = ?) AND COALESCE(is_deleted, FALSE) = FALSE
+        """, [job_id, user.workspace_id, user.id]).fetchone()
     else:
-        job = db.execute("SELECT id, file_name, total_emails, processed_emails, status, created_at, completed_at FROM verification_jobs WHERE id = ? AND user_id = ?", [job_id, user.id]).fetchone()
-    return job
+        return db.execute("""
+            SELECT id, file_name, total_emails, processed_emails, status, created_at, completed_at 
+            FROM verification_jobs 
+            WHERE id = ? AND user_id = ? AND COALESCE(is_deleted, FALSE) = FALSE
+        """, [job_id, user.id]).fetchone()
 
 @job_router.get("/{job_id}")
 async def get_job_status(job_id: str, current_user: UserResponse = Depends(require_permission("verification.history"))):
@@ -177,65 +184,25 @@ async def cancel_job(job_id: str, current_user: UserResponse = Depends(require_p
 
 ALL_EXPORT_COLUMNS = ["email", "status", "domain", "is_role", "is_disposable", "smtp_result", "created_at"]
 
-def _ensure_job_results_exist(db, job_id: str):
-    """If a job has 0 records in verification_results (due to prior server restart before buffer flush), auto-repair results so job is downloadable."""
-    try:
-        cnt = db.execute("SELECT count(*) FROM verification_results WHERE job_id = ?", [job_id]).fetchone()[0]
-        if cnt > 0:
-            return
-        job = db.execute("SELECT file_name, total_emails, processed_emails FROM verification_jobs WHERE id = ?", [job_id]).fetchone()
-        if not job:
-            return
-        file_name, total_emails, processed_emails = job
-        num_to_create = max(processed_emails, total_emails if total_emails > 0 else 50, 1)
-        
-        statuses = ["valid", "valid", "valid", "invalid", "risky", "catch_all", "disposable", "role_based"]
-        sample_records = []
-        base_name = (file_name or "emails").replace(".xlsx", "").replace(".csv", "").replace(".txt", "")
-        for i in range(num_to_create):
-            st = statuses[i % len(statuses)]
-            sample_records.append((
-                str(uuid.uuid4()),
-                job_id,
-                f"contact_{i+1}_{base_name}@company{i%5+1}.com",
-                f"company{i%5+1}.com",
-                st,
-                i % 8 == 0,
-                st == "disposable",
-                "250 OK - Deliverable" if st == "valid" else "550 Mailbox unavailable"
-            ))
-        db.executemany("""
-            INSERT INTO verification_results (id, job_id, email, domain, status, is_role, is_disposable, smtp_result)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, sample_records)
-        db.execute("UPDATE verification_jobs SET processed_emails = ? WHERE id = ?", [len(sample_records), job_id])
-    except Exception as e:
-        pass
-
 def _verify_job_ownership(job_id: str, current_user: UserResponse, db):
-    """Raise 404 if job does not exist or does not belong to this user."""
+    """Raise 404 if job does not exist or does not belong to this user's workspace/account."""
     if current_user.role == "superadmin":
         job = db.execute(
-            "SELECT id FROM verification_jobs WHERE id = ?", [job_id]
+            "SELECT id FROM verification_jobs WHERE id = ? AND COALESCE(is_deleted, FALSE) = FALSE", [job_id]
         ).fetchone()
-    elif current_user.role == "admin":
-        # Admin can download any job from their users
-        job = db.execute("""
-            SELECT vj.id FROM verification_jobs vj
-            JOIN users u ON vj.user_id = u.id
-            WHERE vj.id = ? AND (u.admin_id = ? OR vj.user_id = ?)
-        """, [job_id, current_user.id, current_user.id]).fetchone()
-    else:
-        # User can only download their own jobs
+    elif current_user.workspace_id:
         job = db.execute(
-            "SELECT id FROM verification_jobs WHERE id = ? AND user_id = ?",
+            "SELECT id FROM verification_jobs WHERE id = ? AND (workspace_id = ? OR user_id = ?) AND COALESCE(is_deleted, FALSE) = FALSE",
+            [job_id, current_user.workspace_id, current_user.id]
+        ).fetchone()
+    else:
+        job = db.execute(
+            "SELECT id FROM verification_jobs WHERE id = ? AND user_id = ? AND COALESCE(is_deleted, FALSE) = FALSE",
             [job_id, current_user.id]
         ).fetchone()
 
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-
-    _ensure_job_results_exist(db, job_id)
 
 
 def _parse_columns(columns_param: Optional[str], all_cols: list) -> list:
@@ -638,7 +605,7 @@ async def sa_update_admin_credits(admin_id: str, data: CreditUpdate):
     if new_pool < credits_given_to_users:
         raise HTTPException(400, "Cannot reduce pool below already-allocated user credits")
         
-    db.execute("UPDATE users SET credit_pool = ? WHERE id = ?", [new_pool, admin_id])
+    db.execute("UPDATE users SET credit_pool = ?, credits = ? WHERE id = ?", [new_pool, new_pool, admin_id])
     return {"message": "Credits updated"}
 
 @superadmin_router.patch("/admins/{admin_id}/suspend")
@@ -794,7 +761,7 @@ async def a_user_credits(user_id: str, data: CreditUpdate, current_user: UserRes
         if data.amount > 0 and (current_user.credit_pool - allocated) < data.amount:
             raise HTTPException(400, "Not enough credits in Admin pool")
             
-    db.execute("UPDATE users SET credit_pool = GREATEST(0, credit_pool + ?) WHERE id = ?", [data.amount, user_id])
+    db.execute("UPDATE users SET credit_pool = GREATEST(0, credit_pool + ?), credits = GREATEST(0, COALESCE(credits, 0) + ?) WHERE id = ?", [data.amount, data.amount, user_id])
     return {"message": "Credits updated"}
 
 @admin_router.patch("/users/{user_id}/tier")

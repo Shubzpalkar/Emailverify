@@ -357,11 +357,24 @@ async def change_plan(req: CheckoutRequest, current_user: UserResponse = Depends
 @router.get("/invoices")
 def get_user_invoices(current_user: UserResponse = Depends(require_permission("billing.view"))):
     db = get_db()
-    rows = db.execute("""
-        SELECT i.id, i.invoice_number, i.billing_date, i.amount, i.tax, i.plan_name, i.status 
-        FROM invoices i WHERE i.user_id = ?
-        ORDER BY i.billing_date DESC
-    """, [current_user.id]).fetchall()
+    if current_user.role == "superadmin":
+        rows = db.execute("""
+            SELECT i.id, i.invoice_number, i.billing_date, i.amount, i.tax, i.plan_name, i.status 
+            FROM invoices i
+            ORDER BY i.billing_date DESC
+        """).fetchall()
+    elif current_user.workspace_id:
+        rows = db.execute("""
+            SELECT i.id, i.invoice_number, i.billing_date, i.amount, i.tax, i.plan_name, i.status 
+            FROM invoices i WHERE (i.workspace_id = ? OR i.user_id = ?)
+            ORDER BY i.billing_date DESC
+        """, [current_user.workspace_id, current_user.id]).fetchall()
+    else:
+        rows = db.execute("""
+            SELECT i.id, i.invoice_number, i.billing_date, i.amount, i.tax, i.plan_name, i.status 
+            FROM invoices i WHERE i.user_id = ?
+            ORDER BY i.billing_date DESC
+        """, [current_user.id]).fetchall()
     
     return [
         {
@@ -378,11 +391,24 @@ def get_user_invoices(current_user: UserResponse = Depends(require_permission("b
 @router.get("/payments")
 def get_user_payments(current_user: UserResponse = Depends(require_permission("billing.view"))):
     db = get_db()
-    rows = db.execute("""
-        SELECT p.created_at, p.transaction_id, p.plan_name, p.amount, p.currency, p.payment_status, p.invoice_id 
-        FROM payments p WHERE p.user_id = ?
-        ORDER BY p.created_at DESC
-    """, [current_user.id]).fetchall()
+    if current_user.role == "superadmin":
+        rows = db.execute("""
+            SELECT p.created_at, p.transaction_id, p.plan_name, p.amount, p.currency, p.payment_status, p.invoice_id 
+            FROM payments p
+            ORDER BY p.created_at DESC
+        """).fetchall()
+    elif current_user.workspace_id:
+        rows = db.execute("""
+            SELECT p.created_at, p.transaction_id, p.plan_name, p.amount, p.currency, p.payment_status, p.invoice_id 
+            FROM payments p WHERE (p.workspace_id = ? OR p.user_id = ?)
+            ORDER BY p.created_at DESC
+        """, [current_user.workspace_id, current_user.id]).fetchall()
+    else:
+        rows = db.execute("""
+            SELECT p.created_at, p.transaction_id, p.plan_name, p.amount, p.currency, p.payment_status, p.invoice_id 
+            FROM payments p WHERE p.user_id = ?
+            ORDER BY p.created_at DESC
+        """, [current_user.id]).fetchall()
     
     return [
         {
@@ -447,14 +473,30 @@ def get_customer_portal(current_user: UserResponse = Depends(require_permission(
     return {"portal_url": "/billing?mock_portal=true"}
 
 @router.get("/invoices/{invoice_id}/download")
-def download_invoice(invoice_id: str):
-    # Generates a printable HTML version of the invoice
+def download_invoice(
+    invoice_id: str,
+    current_user: UserResponse = Depends(require_permission("billing.view"))
+):
+    # Generates a printable HTML version of the invoice with tenant verification
     db = get_db()
-    row = db.execute("""
-        SELECT i.invoice_number, i.billing_date, i.amount, i.tax, i.plan_name, u.email 
-        FROM invoices i JOIN users u ON i.user_id = u.id 
-        WHERE i.id = ?
-    """, [invoice_id]).fetchone()
+    if current_user.role == "superadmin":
+        row = db.execute("""
+            SELECT i.invoice_number, i.billing_date, i.amount, i.tax, i.plan_name, u.email 
+            FROM invoices i JOIN users u ON i.user_id = u.id 
+            WHERE i.id = ?
+        """, [invoice_id]).fetchone()
+    elif current_user.workspace_id:
+        row = db.execute("""
+            SELECT i.invoice_number, i.billing_date, i.amount, i.tax, i.plan_name, u.email 
+            FROM invoices i JOIN users u ON i.user_id = u.id 
+            WHERE i.id = ? AND (i.workspace_id = ? OR i.user_id = ?)
+        """, [invoice_id, current_user.workspace_id, current_user.id]).fetchone()
+    else:
+        row = db.execute("""
+            SELECT i.invoice_number, i.billing_date, i.amount, i.tax, i.plan_name, u.email 
+            FROM invoices i JOIN users u ON i.user_id = u.id 
+            WHERE i.id = ? AND i.user_id = ?
+        """, [invoice_id, current_user.id]).fetchone()
     
     if not row:
         raise HTTPException(status_code=404, detail="Invoice not found")

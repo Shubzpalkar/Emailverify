@@ -123,8 +123,43 @@
 .sticky-header-table th {
   position: sticky;
   top: 0;
-  background: #0f172a;
+  background: var(--bg-surface);
   z-index: 2;
+}
+
+/* Table Empty State */
+.table-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3.5rem 1.5rem;
+  text-align: center;
+}
+
+.table-empty-state .empty-state-icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--primary-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.table-empty-state h4 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0 0 0.35rem 0;
+}
+
+.table-empty-state p {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  max-width: 400px;
+  margin: 0;
 }
 
 /* Table Pagination */
@@ -141,7 +176,7 @@
 .drawer-backdrop {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(4px);
   z-index: 999;
   display: flex;
@@ -149,19 +184,19 @@
 }
 
 .drawer-card {
-  background: #0f172a;
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border);
   width: 100%;
   max-width: 600px;
   height: 100vh;
   display: flex;
   flex-direction: column;
-  box-shadow: -10px 0 40px rgba(0, 0, 0, 0.5);
+  box-shadow: -10px 0 40px rgba(0, 0, 0, 0.25);
 }
 
 .drawer-header {
   padding: 1.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -180,9 +215,9 @@
 
 .drawer-tabs {
   display: flex;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--border);
   padding: 0 1.5rem;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-surface-elevated);
 }
 
 .drawer-tab {
@@ -198,12 +233,12 @@
 }
 
 .drawer-tab:hover {
-  color: var(--text-color);
+  color: var(--text-main);
 }
 
 .drawer-tab.active {
-  color: var(--primary, #3b82f6);
-  border-bottom-color: var(--primary, #3b82f6);
+  color: var(--primary);
+  border-bottom-color: var(--primary);
 }
 
 .drawer-body {

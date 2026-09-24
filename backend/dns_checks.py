@@ -139,16 +139,16 @@ def get_aiodns_resolver():
 def classify_dns_exception(exc: Exception) -> Tuple[str, str, bool]:
     """
     Classify DNS exceptions into structured (dns_status, reason, is_retryable) tuples.
-    Differentiates: NXDOMAIN, NoAnswer, Timeout, SERVFAIL, Resolver Failure, Network Error.
+    Differentiates: NXDOMAIN, NoAnswer (No MX), Timeout, SERVFAIL, Resolver Failure, Network Error.
     """
-    if isinstance(exc, asyncio.TimeoutError):
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
         return "timeout", "DNS lookup timed out", True
 
-    if isinstance(exc, dns.resolver.NXDOMAIN):
+    if isinstance(exc, (dns.resolver.NXDOMAIN, dns.resolver.YXDOMAIN)):
         return "nxdomain", "Domain does not exist (NXDOMAIN)", False
     if isinstance(exc, dns.resolver.NoAnswer):
         return "no_mx_server", "No MX records found for domain", False
-    if isinstance(exc, dns.resolver.Timeout):
+    if isinstance(exc, (dns.resolver.Timeout, getattr(dns.resolver, "LifetimeTimeout", dns.resolver.Timeout))):
         return "timeout", "DNS lookup timed out", True
     if isinstance(exc, dns.resolver.NoNameservers):
         return "servfail", "No nameservers responded (SERVFAIL)", True
@@ -157,17 +157,18 @@ def classify_dns_exception(exc: Exception) -> Tuple[str, str, bool]:
     args = getattr(exc, 'args', ())
     code = args[0] if args and isinstance(args[0], int) else None
 
-    if code == 4 or "not found" in msg or "nxdomain" in msg or "domain name not found" in msg:
+    # pycares / aiodns error codes
+    if code == 4 or "domain name not found" in msg or "nxdomain" in msg or "not found" in msg:
         return "nxdomain", "Domain does not exist (NXDOMAIN)", False
-    if code == 1 or "no data" in msg or "nodata" in msg:
+    if code == 1 or "no data" in msg or "nodata" in msg or "no answer" in msg:
         return "no_mx_server", "No MX records found for domain", False
-    if code == 2 or "servfail" in msg or "server failure" in msg:
+    if code == 2 or "servfail" in msg or "server failure" in msg or "server rejected query" in msg:
         return "servfail", "DNS server failure (SERVFAIL)", True
-    if "timeout" in msg:
+    if code == 12 or "timeout" in msg or "timed out" in msg:
         return "timeout", "DNS server timeout", True
-    if "refused" in msg or "query refused" in msg:
+    if code == 11 or "refused" in msg or "query refused" in msg:
         return "resolver_failure", "DNS query refused by resolver", True
-    if "connection refused" in msg or "network" in msg or "unreachable" in msg:
+    if "connection refused" in msg or "network" in msg or "unreachable" in msg or "could not contact" in msg:
         return "network_error", "DNS network connection error", True
 
     return "temp_failure", f"Temporary DNS failure: {msg}", True
@@ -195,7 +196,7 @@ async def dual_dns_query_mx(domain: str) -> Tuple[List[str], str, float, Optiona
         return mx_records, best_ip, latency, None
     except Exception as exc:
         latency = (time.perf_counter() - start) * 1000.0
-        is_timeout = isinstance(exc, asyncio.TimeoutError) or "timeout" in str(exc).lower()
+        is_timeout = isinstance(exc, (asyncio.TimeoutError, TimeoutError)) or "timeout" in str(exc).lower()
         dns_health_monitor.record_result(best_ip, success=False, latency_ms=latency, is_timeout=is_timeout)
         
         status, _, retryable = classify_dns_exception(exc)
@@ -216,7 +217,7 @@ async def dual_dns_query_mx(domain: str) -> Tuple[List[str], str, float, Optiona
         return mx_records, fallback_ip, latency, None
     except Exception as exc:
         latency = (time.perf_counter() - fallback_start) * 1000.0
-        is_timeout = isinstance(exc, dns.resolver.Timeout) or "timeout" in str(exc).lower()
+        is_timeout = isinstance(exc, (dns.resolver.Timeout, TimeoutError)) or "timeout" in str(exc).lower()
         dns_health_monitor.record_result(fallback_ip, success=False, latency_ms=latency, is_timeout=is_timeout)
         return [], fallback_ip, latency, exc
 
@@ -237,7 +238,10 @@ async def resolve_domain_detail(domain: str) -> Dict[str, Any]:
     """
     domain = domain.strip().lower()
     if domain in _dns_memory_cache:
-        return _dns_memory_cache[domain]
+        cached_entry = _dns_memory_cache[domain]
+        # Only return cache if it represents a complete, non-retryable result
+        if not cached_entry.get("retryable", False):
+            return cached_entry
 
     backoff_delays = [0.5, 1.0, 2.0]  # Exponential backoff: 500ms, 1000ms, 2000ms
     last_exc = None
@@ -270,59 +274,99 @@ async def resolve_domain_detail(domain: str) -> Dict[str, Any]:
         if not retryable or status in ("nxdomain", "no_mx_server"):
             break
 
-    # If MX failed, check A/AAAA record fallback to distinguish No MX from NXDOMAIN
+    # If MX lookup returned no_mx_server or exception, check A/AAAA record fallback
     has_a = False
+    a_status = "unknown"
+    a_exc = None
     try:
         resolver = get_aiodns_resolver()
         await asyncio.wait_for(resolver.query(domain, 'A'), timeout=settings.DNS_LOOKUP_TIMEOUT)
         has_a = True
-    except Exception:
-        try:
-            async_res = dns.asyncresolver.Resolver()
-            async_res.lifetime = settings.DNS_LOOKUP_TIMEOUT
-            await async_res.resolve(domain, 'AAAA')
-            has_a = True
-        except Exception:
-            has_a = False
+        a_status = "valid"
+    except Exception as exc_a:
+        a_exc = exc_a
+        a_status, _, a_retryable = classify_dns_exception(exc_a)
+        if not has_a:
+            try:
+                async_res = dns.asyncresolver.Resolver()
+                async_res.lifetime = settings.DNS_LOOKUP_TIMEOUT
+                await async_res.resolve(domain, 'AAAA')
+                has_a = True
+                a_status = "valid"
+            except Exception as exc_aaaa:
+                if a_status != "nxdomain":
+                    a_status, _, _ = classify_dns_exception(exc_aaaa)
 
     status, reason, retryable = classify_dns_exception(last_exc) if last_exc else ("no_mx_server", "No MX records", False)
 
-    if status == "no_mx_server" and has_a:
-        result = {
-            "dns_status": "no_mx_server",
-            "resolver": used_ip,
-            "reason": "Domain resolves A/AAAA but has no MX records",
-            "latency_ms": round(last_latency, 2),
-            "retryable": False,
-            "confidence": 0.95,
-            "mx_records": [],
-            "has_a_record": True
-        }
-    elif status == "no_mx_server" and not has_a:
-        result = {
-            "dns_status": "nxdomain",
-            "resolver": used_ip,
-            "reason": "Domain does not exist or resolve (NXDOMAIN)",
-            "latency_ms": round(last_latency, 2),
-            "retryable": False,
-            "confidence": 0.99,
-            "mx_records": [],
-            "has_a_record": False
-        }
+    if status == "no_mx_server":
+        if has_a:
+            result = {
+                "dns_status": "no_mx_server",
+                "resolver": used_ip,
+                "reason": "Domain resolves A/AAAA but has no MX records",
+                "latency_ms": round(last_latency, 2),
+                "retryable": False,
+                "confidence": 0.95,
+                "mx_records": [],
+                "has_a_record": True
+            }
+            _dns_memory_cache[domain] = result
+            return result
+        elif a_status == "nxdomain":
+            result = {
+                "dns_status": "nxdomain",
+                "resolver": used_ip,
+                "reason": "Domain does not exist (NXDOMAIN)",
+                "latency_ms": round(last_latency, 2),
+                "retryable": False,
+                "confidence": 0.99,
+                "mx_records": [],
+                "has_a_record": False
+            }
+            _dns_memory_cache[domain] = result
+            return result
+        elif a_status in ("timeout", "servfail", "resolver_failure", "network_error"):
+            # A/AAAA lookup failed temporarily - do not assume NXDOMAIN!
+            result = {
+                "dns_status": a_status,
+                "resolver": used_ip,
+                "reason": f"DNS {a_status} during host resolution",
+                "latency_ms": round(last_latency, 2),
+                "retryable": True,
+                "confidence": 0.30,
+                "mx_records": [],
+                "has_a_record": False
+            }
+            return result
+        else:
+            result = {
+                "dns_status": "no_mx_server",
+                "resolver": used_ip,
+                "reason": "No MX records found for domain",
+                "latency_ms": round(last_latency, 2),
+                "retryable": False,
+                "confidence": 0.95,
+                "mx_records": [],
+                "has_a_record": False
+            }
+            _dns_memory_cache[domain] = result
+            return result
     else:
+        # Status was timeout, servfail, resolver_failure, etc.
         result = {
             "dns_status": status,
             "resolver": used_ip,
             "reason": reason,
             "latency_ms": round(last_latency, 2),
             "retryable": retryable,
-            "confidence": 0.50 if retryable else 0.95,
+            "confidence": 0.30 if retryable else 0.95,
             "mx_records": [],
             "has_a_record": has_a
         }
-
-    _dns_memory_cache[domain] = result
-    return result
+        if not retryable:
+            _dns_memory_cache[domain] = result
+        return result
 
 async def lookup_mx(domain: str) -> Tuple[bool, List[str]]:
     """Lookup MX records for a domain and return them sorted by priority."""

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import Optional, List
 from auth import get_current_user, UserResponse
-from middleware.rbac import require_permission
+from middleware.rbac import require_permission, can_manage_role, can_assign_role, ROLE_MAP
 from database import get_db
 from schemas.member import PaginatedMembersResponse, MemberResponse, MemberCreate, MemberUpdate
 import uuid
@@ -112,6 +112,9 @@ def add_member(
     if not current_user.workspace_id:
         raise HTTPException(status_code=400, detail="User does not belong to a workspace")
         
+    if not can_assign_role(current_user.role, member.role):
+        raise HTTPException(status_code=403, detail="Cannot assign this role")
+        
     db = get_db()
     
     # Check if user exists
@@ -121,11 +124,12 @@ def add_member(
         
     user_id = str(uuid.uuid4())
     now = datetime.utcnow()
+    role_id = ROLE_MAP.get(member.role, "role_teammember")
     
     db.execute("""
-        INSERT INTO users (id, email, display_name, role, department, workspace_id, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'Active', ?)
-    """, [user_id, member.email, member.display_name, member.role, member.department, current_user.workspace_id, now])
+        INSERT INTO users (id, email, display_name, role, role_id, department, workspace_id, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'Active', ?)
+    """, [user_id, member.email, member.display_name, member.role, role_id, member.department, current_user.workspace_id, now])
     
     log_audit(db, current_user.workspace_id, current_user.id, "member.added", user_id, f"Added user {member.email} with role {member.role}")
     
@@ -164,6 +168,15 @@ def update_member(
     if member_id == current_user.id and update_data.status and update_data.status != member[5]:
         raise HTTPException(status_code=400, detail="Cannot change your own status")
         
+    # Role hierarchy: check if actor can manage target's current role
+    if not can_manage_role(current_user.role, member[3]):
+        raise HTTPException(status_code=403, detail="Cannot modify a member with equal or higher role")
+        
+    # Role hierarchy: check if actor can assign new role
+    if update_data.role is not None:
+        if not can_assign_role(current_user.role, update_data.role):
+            raise HTTPException(status_code=403, detail="Cannot assign this role")
+        
     workspace = db.execute("SELECT owner_user_id FROM workspaces WHERE id = ?", [current_user.workspace_id]).fetchone()
     
     if update_data.role and update_data.role != member[3]:
@@ -184,6 +197,9 @@ def update_member(
     if update_data.role is not None:
         updates.append("role = ?")
         params.append(update_data.role)
+        role_id = ROLE_MAP.get(update_data.role, "role_teammember")
+        updates.append("role_id = ?")
+        params.append(role_id)
     if update_data.department is not None:
         updates.append("department = ?")
         params.append(update_data.department)
@@ -230,6 +246,9 @@ def remove_member(
     if not member:
         raise HTTPException(status_code=404, detail="Member not found")
         
+    if not can_manage_role(current_user.role, member[1]):
+        raise HTTPException(status_code=403, detail="Cannot remove a member with equal or higher role")
+        
     workspace = db.execute("SELECT owner_user_id FROM workspaces WHERE id = ?", [current_user.workspace_id]).fetchone()
     if workspace and workspace[0] == member_id:
         raise HTTPException(status_code=400, detail="Cannot remove the workspace owner")
@@ -239,8 +258,6 @@ def remove_member(
         if admin_count <= 1:
             raise HTTPException(status_code=400, detail="Cannot remove the last admin of the workspace")
         
-    # Unlink user from workspace instead of deleting them completely (or delete if they are just a workspace member)
-    # To keep things simple, let's just clear the workspace_id for this user.
     db.execute("UPDATE users SET workspace_id = NULL WHERE id = ?", [member_id])
     
     log_audit(db, current_user.workspace_id, current_user.id, "member.removed", member_id, f"Removed user {member[0]} from workspace")
@@ -259,6 +276,9 @@ async def invite_member(
 ):
     if not current_user.workspace_id:
         raise HTTPException(status_code=400, detail="User does not belong to a workspace")
+        
+    if not can_assign_role(current_user.role, invite.role):
+        raise HTTPException(status_code=403, detail="Cannot invite with this role")
         
     db = get_db()
     
@@ -400,6 +420,10 @@ def accept_invite(token: str, req: AcceptInviteRequest):
         db.execute("UPDATE invitations SET status = 'Expired' WHERE id = ?", [invite[0]])
         raise HTTPException(status_code=400, detail="Invitation has expired")
         
+    assigned_role = str(invite[3]).lower().strip()
+    if assigned_role == "superadmin" or assigned_role not in ["admin", "manager", "user", "viewer"]:
+        raise HTTPException(status_code=400, detail="Invalid invitation role")
+        
     # Verify the firebase token sent by the frontend
     try:
         decoded_token = firebase_admin.auth.verify_id_token(req.firebase_token, clock_skew_seconds=300)
@@ -415,18 +439,19 @@ def accept_invite(token: str, req: AcceptInviteRequest):
     # Check if user already in DB
     existing_user = db.execute("SELECT id, workspace_id FROM users WHERE firebase_uid = ? OR email = ?", [firebase_uid, invite[2]]).fetchone()
     now = datetime.utcnow()
+    role_id = ROLE_MAP.get(assigned_role, "role_teammember")
     
     if existing_user:
         user_id = existing_user[0]
         # Update workspace and role
-        db.execute("UPDATE users SET workspace_id = ?, role = ?, department = ?, status = 'Active', firebase_uid = ? WHERE id = ?", 
-                   [invite[1], invite[3], invite[4], firebase_uid, user_id])
+        db.execute("UPDATE users SET workspace_id = ?, role = ?, role_id = ?, department = ?, status = 'Active', firebase_uid = ? WHERE id = ?", 
+                   [invite[1], assigned_role, role_id, invite[4], firebase_uid, user_id])
     else:
         user_id = str(uuid.uuid4())
         db.execute('''
-            INSERT INTO users (id, firebase_uid, email, display_name, role, department, workspace_id, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'Active', ?)
-        ''', [user_id, firebase_uid, invite[2], display_name, invite[3], invite[4], invite[1], now])
+            INSERT INTO users (id, firebase_uid, email, display_name, role, role_id, department, workspace_id, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?)
+        ''', [user_id, firebase_uid, invite[2], display_name, assigned_role, role_id, invite[4], invite[1], now])
         
     # Mark invite accepted
     db.execute("UPDATE invitations SET status = 'Accepted' WHERE id = ?", [invite[0]])
